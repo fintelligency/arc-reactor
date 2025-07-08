@@ -41,16 +41,18 @@ def calculate_fib_pivots(symbol, year):
             raise ValueError("Empty or invalid data")
 
         df.dropna(inplace=True)
-        high = df['High'].max()
-        low = df['Low'].min()
-        close = float(df['Close'].dropna().values[-1])  # ✅ Safe scalar float
+        high = float(df['High'].max())
+        low = float(df['Low'].min())
+        close = float(df['Close'].dropna().values[-1])  # ✅ force scalar float
+
+        print(f"[DEBUG] {symbol} → close: {close}, type: {type(close)}")
 
         pp = (high + low + close) / 3
         r = high - low
 
         return {
-            'Symbol': symbol,
-            'Year': year + 1,
+            'Symbol': str(symbol),
+            'Year': int(year + 1),
             'PP': round(pp, 2),
             'S1': round(pp - 0.382 * r, 2),
             'S2': round(pp - 0.618 * r, 2),
@@ -63,6 +65,7 @@ def calculate_fib_pivots(symbol, year):
     except Exception as e:
         print(f"[ZoneGen] ⚠️ Skipping {symbol}: {e}")
         return None
+
 
 def generate_zone_file(year=None, force=False):
     if not year:
