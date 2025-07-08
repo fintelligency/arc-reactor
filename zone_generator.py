@@ -1,26 +1,42 @@
 # zone_generator.py
-
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 import yfinance as yf
 import pandas as pd
 import datetime
 import os
 import requests
-
+import io  # ✅ NEW
 
 def get_nifty50_symbols():
-    url = 'https://www1.nseindia.com/content/indices/ind_nifty50list.csv'
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    r = requests.get(url, headers=headers)
-    df = pd.read_csv(pd.compat.StringIO(r.text))
-    return df['Symbol'].str.replace('&', '%26').tolist()
+    url = "https://archives.nseindia.com/content/indices/ind_nifty50list.csv"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
-
+    try:
+        r = requests.get(url, headers=headers)
+        r.raise_for_status()
+        df = pd.read_csv(io.StringIO(r.text))  # ✅ FIXED
+        return df["Symbol"].tolist()
+    except Exception as e:
+        print(f"[Error] Could not fetch Nifty50 list: {e}")
+        # fallback static list
+        return [
+            "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK",
+            "LT", "SBIN", "HINDUNILVR", "ITC", "KOTAKBANK",
+            "AXISBANK", "WIPRO", "TECHM", "SUNPHARMA", "BAJFINANCE",
+            "ASIANPAINT", "HCLTECH", "ULTRACEMCO", "POWERGRID", "NTPC",
+            "NESTLEIND", "ONGC", "HDFCLIFE", "ADANIENT", "COALINDIA",
+            "MARUTI", "TITAN", "BAJAJ-AUTO", "BPCL", "EICHERMOT"
+        ]
 def calculate_fib_pivots(symbol, year):
     yf_symbol = symbol + '.NS'
     start = f"{year}-01-01"
     end = f"{year}-12-31"
 
-    df = yf.download(yf_symbol, start=start, end=end, interval='1mo', progress=False)
+    df = yf.download(yf_symbol, start=start, end=end, interval='1mo', progress=False, auto_adjust=True)
+
     if df.empty:
         return None
 
