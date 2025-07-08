@@ -3,3 +3,4 @@ python-telegram-bot
 pandas
 openpyxl
 requests
+xlsxwriter
