@@ -10,7 +10,11 @@ def upload_to_gsheet(df_new, sheet_name="zones_2025"):
         "https://www.googleapis.com/auth/drive"
     ]
 
-    # Load credentials from environment variable
+    # Safeguard: Ensure Symbol column exists
+    if "Symbol" not in df_new.columns:
+        raise ValueError("[GSheet] ❌ 'Symbol' column missing in DataFrame.")
+
+    # Load credentials from environment
     creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
