@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment
+.env
+.venv/
+env/
+venv/
+
+# Configs
+config/google_creds.json
+
+# Excel Output
+zones/*.xlsx
+
+# OS/System
+.DS_Store
+Thumbs.db
