@@ -1,107 +1,37 @@
-import ssl
-ssl._create_default_https_context = ssl._create_unverified_context
-
-import yfinance as yf
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
-import datetime
 import os
-import requests
-import io
 import json
-from upload.gdrive_sync import upload_to_gsheet
 
-def get_nifty50_symbols():
-    url = "https://archives.nseindia.com/content/indices/ind_nifty50list.csv"
-    headers = {"User-Agent": "Mozilla/5.0"}
+def upload_to_gsheet(df_new, sheet_name="zones_2025"):
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
 
-    try:
-        r = requests.get(url, headers=headers)
-        r.raise_for_status()
-        df = pd.read_csv(io.StringIO(r.text))
-        return df["Symbol"].tolist()
-    except Exception as e:
-        print(f"[ZoneGen] ⚠️ NSE fetch failed: {e}")
-        try:
-            with open("config/nifty50_fallback.json", "r") as f:
-                data = json.load(f)
-                return data["symbols"]
-        except Exception as e:
-            print(f"[ZoneGen] ❌ Fallback JSON failed: {e}")
-            return []
+    # Safeguard: Ensure Symbol column exists
+    if "Symbol" not in df_new.columns:
+        raise ValueError("[GSheet] ❌ 'Symbol' column missing in DataFrame.")
 
-def calculate_fib_pivots(symbol, year):
-    try:
-        yf_symbol = symbol + ".NS"
-        start = f"{year}-01-01"
-        end = f"{year}-12-31"
+    # Load credentials from environment
+    creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
 
-        df = yf.download(yf_symbol, start=start, end=end, interval='1d', progress=False, auto_adjust=True)
+    sheet = client.open("ArcReactorMaster")
+    worksheet = sheet.worksheet(sheet_name)
 
-        if df.empty or 'Close' not in df.columns:
-            raise ValueError("No valid data")
+    # Download existing sheet as DataFrame
+    data = worksheet.get_all_records()
+    df_existing = pd.DataFrame(data)
 
-        df.dropna(inplace=True)
+    # Replace rows in df_existing with matching symbols from df_new
+    for symbol in df_new["Symbol"]:
+        df_existing = df_existing[df_existing["Symbol"] != symbol]
+    df_combined = pd.concat([df_existing, df_new], ignore_index=True).sort_values(by="Symbol")
 
-        high = float(df['High'].max().item())
-        low = float(df['Low'].min().item())
-        close = float(df['Close'].iloc[-1].item())
-
-        pp = (high + low + close) / 3
-        r = high - low
-
-        return {
-            'Symbol': symbol,
-            'Year': int(year + 1),
-            'PP': round(pp, 2),
-            'S1': round(pp - 0.382 * r, 2),
-            'S2': round(pp - 0.618 * r, 2),
-            'S3': round(pp - 1.000 * r, 2),
-            'R1': round(pp + 0.382 * r, 2),
-            'R2': round(pp + 0.618 * r, 2),
-            'R3': round(pp + 1.000 * r, 2)
-        }
-
-    except Exception as e:
-        print(f"[ZoneGen] ⚠️ Skipping {symbol}: {e}")
-        return None
-
-def generate_zone_file(year=None, force=False):
-    if not year:
-        year = datetime.datetime.now().year - 1
-
-    symbols = get_nifty50_symbols()
-    result = []
-
-    for sym in symbols:
-        row = calculate_fib_pivots(sym, year)
-        if row:
-            result.append(row)
-
-    if not result:
-        print("[ZoneGen] ❌ No zone data generated. Check API/data source.")
-        return None
-
-    df = pd.DataFrame(result)
-    upload_to_gsheet(df, sheet_name="zones_2025")
-    return df
-
-def generate_zone_file_for_symbols(symbols, year=None):
-    if not year:
-        year = datetime.datetime.now().year - 1
-
-    result = []
-    for sym in symbols:
-        row = calculate_fib_pivots(sym, year)
-        if row:
-            result.append(row)
-
-    if not result:
-        print("[ZoneGen] ❌ No custom zone data generated.")
-        return None
-
-    df = pd.DataFrame(result)
-    upload_to_gsheet(df, sheet_name="zones_2025")
-    return df
-
-if __name__ == "__main__":
-    generate_zone_file(force=True)
+    # Reupload
+    worksheet.clear()
+    worksheet.update([df_combined.columns.values.tolist()] + df_combined.values.tolist())
+    print(f"[GSheet] 🔁 Updated rows: {df_new['Symbol'].tolist()}")
