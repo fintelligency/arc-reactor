@@ -1,6 +1,8 @@
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
+import os
+import json
 
 def upload_to_gsheet(df_new, sheet_name="zones_2025"):
     scope = [
@@ -8,7 +10,9 @@ def upload_to_gsheet(df_new, sheet_name="zones_2025"):
         "https://www.googleapis.com/auth/drive"
     ]
 
-    creds = ServiceAccountCredentials.from_json_keyfile_name("config/google_creds.json", scope)
+    # Load credentials from environment variable
+    creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
 
     sheet = client.open("ArcReactorMaster")
