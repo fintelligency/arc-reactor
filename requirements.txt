@@ -1,5 +1,5 @@
-python-telegram-bot==20.8
+yfinance
+python-telegram-bot
 pandas
-httpx
-certifi
 openpyxl
+requests

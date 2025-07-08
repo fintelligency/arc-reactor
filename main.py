@@ -1,19 +1,17 @@
-import os
-import certifi
-os.environ["SSL_CERT_FILE"] = certifi.where()
-
-from config.config_loader import load_config
 from commands.telegram_bot import start_bot
-from backtest.backtest import run_backtest
+from config.config_loader import CONFIG
+from zone_generator import generate_zone_file
+import datetime
+import os
 
-CONFIG = load_config()
-mode = CONFIG.get("mode", "bot")
+if __name__ == "__main__":
+    print("[ArcReactor] Booting Arc Commander...")
 
-if mode == "bot":
-    print("[ArcReactor] Launching Telegram Commander...")
+    # Ensure yearly zones are generated
+    current_year = datetime.datetime.now().year
+    zone_file = f"zones/equity_zones_{current_year}.xlsx"
+    if not os.path.exists(zone_file):
+        print("[Startup] Generating new yearly zone data...")
+        generate_zone_file(current_year - 1)
+
     start_bot(CONFIG)
-elif mode == "backtest":
-    print("[ArcReactor] Running Backtest...")
-    run_backtest(CONFIG)
-else:
-    print("❌ Unknown mode. Use mode=bot or mode=backtest")
