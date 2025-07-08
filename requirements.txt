@@ -3,4 +3,5 @@ python-telegram-bot
 pandas
 openpyxl
 requests
-xlsxwriter
+gspread
+oauth2client

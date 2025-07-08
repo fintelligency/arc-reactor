@@ -4,9 +4,10 @@ ssl._create_default_https_context = ssl._create_unverified_context
 import yfinance as yf
 import pandas as pd
 import datetime
-import os
 import requests
 import io
+import json
+from upload.gdrive_sync import upload_to_gsheet
 
 def get_nifty50_symbols():
     url = "https://archives.nseindia.com/content/indices/ind_nifty50list.csv"
@@ -18,15 +19,14 @@ def get_nifty50_symbols():
         df = pd.read_csv(io.StringIO(r.text))
         return df["Symbol"].tolist()
     except Exception as e:
-        print(f"[ZoneGen] ⚠️ Failed to fetch Nifty50 list: {e}")
-        return [
-            "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK",
-            "LT", "SBIN", "HINDUNILVR", "ITC", "KOTAKBANK",
-            "AXISBANK", "WIPRO", "TECHM", "SUNPHARMA", "BAJFINANCE",
-            "ASIANPAINT", "HCLTECH", "ULTRACEMCO", "POWERGRID", "NTPC",
-            "NESTLEIND", "ONGC", "HDFCLIFE", "ADANIENT", "COALINDIA",
-            "MARUTI", "TITAN", "BAJAJ-AUTO", "BPCL", "EICHERMOT"
-        ]
+        print(f"[ZoneGen] ⚠️ NSE fetch failed: {e}")
+        try:
+            with open("config/nifty50_fallback.json", "r") as f:
+                data = json.load(f)
+                return data["symbols"]
+        except Exception as e:
+            print(f"[ZoneGen] ❌ Fallback JSON failed: {e}")
+            return []
 
 def calculate_fib_pivots(symbol, year):
     try:
@@ -34,16 +34,16 @@ def calculate_fib_pivots(symbol, year):
         start = f"{year}-01-01"
         end = f"{year}-12-31"
 
-        df = yf.download(yf_symbol, start=start, end=end, interval='1mo', progress=False, auto_adjust=True)
+        df = yf.download(yf_symbol, start=start, end=end, interval='1d', progress=False, auto_adjust=True)
 
         if df.empty or 'Close' not in df.columns:
-            raise ValueError("Empty or invalid data")
+            raise ValueError("No valid data")
 
         df.dropna(inplace=True)
 
         high = float(df['High'].max())
         low = float(df['Low'].min())
-        close = float(df['Close'].dropna().values[-1])  # ✅ Ensure scalar float
+        close = float(df['Close'].iloc[-1])  # Final closing of the year
 
         pp = (high + low + close) / 3
         r = high - low
@@ -68,14 +68,6 @@ def generate_zone_file(year=None, force=False):
     if not year:
         year = datetime.datetime.now().year - 1
 
-    path = f"zones/equity_zones_{year + 1}.xlsx"
-
-    if os.path.exists(path) and not force:
-        print(f"[ZoneGen] Zones for {year + 1} already exist.")
-        return path
-
-    print(f"[ZoneGen] 🚀 Generating zones for year {year + 1}...")
-
     symbols = get_nifty50_symbols()
     result = []
 
@@ -85,26 +77,30 @@ def generate_zone_file(year=None, force=False):
             result.append(row)
 
     if not result:
-        print("[ZoneGen] ❌ No data generated. Please check connection or ticker list.")
+        print("[ZoneGen] ❌ No zone data generated. Check API/data source.")
         return None
 
     df = pd.DataFrame(result)
-    os.makedirs('zones', exist_ok=True)
+    upload_to_gsheet(df, sheet_name="zones_2025")
+    return df
 
-    with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Zones")
-        workbook = writer.book
-        worksheet = writer.sheets["Zones"]
+def generate_zone_file_for_symbols(symbols, year=None):
+    if not year:
+        year = datetime.datetime.now().year - 1
 
-        float_fmt = workbook.add_format({'num_format': '#,##0.00'})
-        for i, col in enumerate(df.columns):
-            if pd.api.types.is_float_dtype(df[col]):
-                worksheet.set_column(i, i, 12, float_fmt)
-            else:
-                worksheet.set_column(i, i, 20)
+    result = []
+    for sym in symbols:
+        row = calculate_fib_pivots(sym, year)
+        if row:
+            result.append(row)
 
-    print(f"[ZoneGen] ✅ Zones saved: {path}")
-    return path
+    if not result:
+        print("[ZoneGen] ❌ No custom zone data generated.")
+        return None
+
+    df = pd.DataFrame(result)
+    upload_to_gsheet(df, sheet_name="zones_2025")
+    return df
 
 if __name__ == "__main__":
     generate_zone_file(force=True)
