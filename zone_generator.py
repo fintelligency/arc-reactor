@@ -1,4 +1,3 @@
-# zone_generator.py
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -41,17 +40,16 @@ def calculate_fib_pivots(symbol, year):
             raise ValueError("Empty or invalid data")
 
         df.dropna(inplace=True)
+
         high = float(df['High'].max())
         low = float(df['Low'].min())
-        close = float(df['Close'].dropna().values[-1])  # ✅ force scalar float
-
-        print(f"[DEBUG] {symbol} → close: {close}, type: {type(close)}")
+        close = float(df['Close'].dropna().values[-1])  # ✅ Ensure scalar float
 
         pp = (high + low + close) / 3
         r = high - low
 
         return {
-            'Symbol': str(symbol),
+            'Symbol': symbol,
             'Year': int(year + 1),
             'PP': round(pp, 2),
             'S1': round(pp - 0.382 * r, 2),
@@ -65,7 +63,6 @@ def calculate_fib_pivots(symbol, year):
     except Exception as e:
         print(f"[ZoneGen] ⚠️ Skipping {symbol}: {e}")
         return None
-
 
 def generate_zone_file(year=None, force=False):
     if not year:
@@ -88,7 +85,7 @@ def generate_zone_file(year=None, force=False):
             result.append(row)
 
     if not result:
-        print("[ZoneGen] ❌ No data generated. Please check network or symbols.")
+        print("[ZoneGen] ❌ No data generated. Please check connection or ticker list.")
         return None
 
     df = pd.DataFrame(result)
