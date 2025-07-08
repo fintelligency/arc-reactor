@@ -43,7 +43,7 @@ def calculate_fib_pivots(symbol, year):
         df.dropna(inplace=True)
         high = df['High'].max()
         low = df['Low'].min()
-        close = df['Close'].iloc[-1]  # scalar value
+        close = float(df['Close'].dropna().values[-1])  # ✅ Safe scalar float
 
         pp = (high + low + close) / 3
         r = high - low
