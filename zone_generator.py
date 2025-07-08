@@ -4,6 +4,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 import yfinance as yf
 import pandas as pd
 import datetime
+import os
 import requests
 import io
 import json
@@ -41,9 +42,9 @@ def calculate_fib_pivots(symbol, year):
 
         df.dropna(inplace=True)
 
-        high = float(df['High'].max())
-        low = float(df['Low'].min())
-        close = float(df['Close'].iloc[-1])  # Final closing of the year
+        high = float(df['High'].max().item())
+        low = float(df['Low'].min().item())
+        close = float(df['Close'].iloc[-1].item())
 
         pp = (high + low + close) / 3
         r = high - low
