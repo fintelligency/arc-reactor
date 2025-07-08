@@ -1,22 +1,26 @@
-from telegram.ext import Updater, CommandHandler
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from config.config_loader import CONFIG
 from zone_generator import generate_zone_file
 import datetime
 
-def start(update, context):
-    update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zones to update PP zones.")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🤖 Arc Commander Activated.\nUse /refresh_zones to update PP zones."
+    )
 
-def refresh_zones(update, context):
+async def refresh_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     year = datetime.datetime.now().year - 1
     file_path = generate_zone_file(year)
-    update.message.reply_text(f"✅ Zones refreshed.\nSaved: `{file_path}`", parse_mode='Markdown')
+    await update.message.reply_text(
+        f"✅ Zones refreshed.\nSaved: `{file_path}`", parse_mode='Markdown'
+    )
 
 def start_bot(config):
-    updater = Updater(config["TELEGRAM_TOKEN"])
-    dp = updater.dispatcher
+    app = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("refresh_zones", refresh_zones))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("refresh_zones", refresh_zones))
 
-    updater.start_polling()
-    updater.idle()
+    print("[Telegram] Arc Commander is up and ready.")
+    app.run_polling()
