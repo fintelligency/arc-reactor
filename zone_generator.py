@@ -60,14 +60,17 @@ def calculate_fib_pivots(symbol, year):
     }
 
 
-def generate_zone_file(year=None):
+def generate_zone_file(year=None, force=False):
     if not year:
         year = datetime.datetime.now().year - 1  # Use previous year
 
     path = f"zones/equity_zones_{year+1}.xlsx"
-    if os.path.exists(path):
+
+    if os.path.exists(path) and not force:
         print(f"[ZoneGenerator] Zones for {year+1} already exist.")
         return path
+
+    print(f"[ZoneGenerator] Generating zones for {year+1}...")
 
     symbols = get_nifty50_symbols()
     result = []

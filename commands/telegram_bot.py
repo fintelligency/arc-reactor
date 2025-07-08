@@ -11,10 +11,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def refresh_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     year = datetime.datetime.now().year - 1
-    file_path = generate_zone_file(year)
+    file_path = generate_zone_file(year, force=True)  # 🔥 force overwrite
     await update.message.reply_text(
-        f"✅ Zones refreshed.\nSaved: `{file_path}`", parse_mode='Markdown'
+        f"✅ Zones regenerated.\nSaved: `{file_path}`", parse_mode='Markdown'
     )
+
 
 def start_bot(config):
     app = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
