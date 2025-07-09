@@ -10,12 +10,19 @@ def upload_to_gsheet(df_new, sheet_name="zones_2025"):
         "https://www.googleapis.com/auth/drive"
     ]
 
-    # Validate DataFrame before proceeding
+    # 🔍 Live debug diagnostics
+    print(f"[GSheet] 🔎 df_new Type: {type(df_new)}")
+    print(f"[GSheet] 🔎 df_new Columns: {getattr(df_new, 'columns', 'N/A')}")
+    print(f"[GSheet] 🔎 df_new Head:\n{df_new if isinstance(df_new, pd.DataFrame) else 'Not a DataFrame'}")
+
+    if not isinstance(df_new, pd.DataFrame):
+        raise ValueError("[GSheet] ❌ df_new is not a DataFrame")
+
     if df_new.empty:
-        raise ValueError("[GSheet] ❌ Attempted to upload an empty DataFrame.")
+        raise ValueError("[GSheet] ❌ DataFrame is empty before upload.")
 
     if "Symbol" not in df_new.columns:
-        raise ValueError(f"[GSheet] ❌ 'Symbol' column missing. Columns: {df_new.columns.tolist()}")
+        raise ValueError(f"[GSheet] ❌ 'Symbol' column missing. Found: {df_new.columns.tolist()}")
 
     creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
