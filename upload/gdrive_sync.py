@@ -10,7 +10,7 @@ def upload_to_gsheet(df_new, sheet_name="zones_2025"):
         "https://www.googleapis.com/auth/drive"
     ]
 
-    # 🔍 Live debug diagnostics
+    # 🔎 Diagnostics
     print(f"[GSheet] 🔎 df_new Type: {type(df_new)}")
     print(f"[GSheet] 🔎 df_new Columns: {getattr(df_new, 'columns', 'N/A')}")
     print(f"[GSheet] 🔎 df_new Head:\n{df_new if isinstance(df_new, pd.DataFrame) else 'Not a DataFrame'}")
@@ -31,10 +31,13 @@ def upload_to_gsheet(df_new, sheet_name="zones_2025"):
     sheet = client.open("ArcReactorMaster")
     worksheet = sheet.worksheet(sheet_name)
 
-    # Fetch existing data safely
+    # Fetch existing data safely and ensure 'Symbol' column exists
     try:
         data = worksheet.get_all_records()
         df_existing = pd.DataFrame(data)
+        if df_existing.empty or "Symbol" not in df_existing.columns:
+            print("[GSheet] ⚠️ Existing sheet missing or corrupt. Initializing new sheet.")
+            df_existing = pd.DataFrame(columns=df_new.columns)
     except Exception as e:
         print(f"[GSheet] ⚠️ Failed to fetch existing data: {e}")
         df_existing = pd.DataFrame(columns=df_new.columns)
