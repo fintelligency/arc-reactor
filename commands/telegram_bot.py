@@ -1,34 +1,33 @@
-from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update
+from config.config_loader import CONFIG
 from zone_generator import generate_zone_file, generate_zone_file_for_symbols
+import datetime
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Arc Commander Activated. Use /refresh_zone <SYMBOL> or /refresh_zone ALL")
+    await update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zone ALL or /refresh_zone RELIANCE")
 
-async def refresh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def refresh_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
+    year = datetime.datetime.now().year - 1
 
-    if not args:
-        await update.message.reply_text("⚠️ Please specify stock(s) or use `/refresh_zone ALL`", parse_mode='Markdown')
+    if not args or args[0].upper() == "ALL":
+        df = generate_zone_file(year=year, force=True)
+    else:
+        symbols = [s.strip().upper() for s in args]
+        df = generate_zone_file_for_symbols(symbols, year=year)
+
+    if df is None or "Symbol" not in df.columns:
+        await update.message.reply_text("❌ Error: 'Symbol' — no valid zone data returned.")
         return
 
-    try:
-        if args[0].upper() == "ALL":
-            generate_zone_file(force=True)
-            await update.message.reply_text("✅ All Nifty 50 zones refreshed and pushed to Google Sheet (zones_2025).")
-        else:
-            symbols = [sym.upper() for sym in args]
-            generate_zone_file_for_symbols(symbols)
-            await update.message.reply_text(f"✅ Zones refreshed for: {', '.join(symbols)} and updated in GSheet.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {str(e)}")
-
+    updated = df['Symbol'].tolist()
+    await update.message.reply_text(f"✅ Zones refreshed & uploaded for: {', '.join(updated)}")
 
 def start_bot(config):
-    application = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
+    app = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("refresh_zone", refresh_zone))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("refresh_zone", refresh_zones))
 
-    print("[Telegram] 🤖 Arc Commander is live.")
-    application.run_polling()
+    app.run_polling()
