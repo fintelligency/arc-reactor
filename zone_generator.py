@@ -49,7 +49,7 @@ def calculate_fib_pivots(symbol, year):
         pp = (high + low + close) / 3
         r = high - low
 
-        return {
+        return dict({
             'Symbol': symbol,
             'Year': int(year + 1),
             'PP': round(pp, 2),
@@ -59,7 +59,7 @@ def calculate_fib_pivots(symbol, year):
             'R1': round(pp + 0.382 * r, 2),
             'R2': round(pp + 0.618 * r, 2),
             'R3': round(pp + 1.000 * r, 2)
-        }
+        })
 
     except Exception as e:
         print(f"[ZoneGen] ⚠️ Skipping {symbol}: {e}")
@@ -94,6 +94,8 @@ def generate_zone_file_for_symbols(symbols, year=None):
         row = calculate_fib_pivots(sym, year)
         if row:
             result.append(row)
+        else:
+            print(f"[ZoneGen] ❌ No zone data for {sym}")
 
     if not result:
         print("[ZoneGen] ❌ No custom zone data generated.")
@@ -103,7 +105,6 @@ def generate_zone_file_for_symbols(symbols, year=None):
     upload_to_gsheet(df, sheet_name="zones_2025")
     return df
 
-# ✅ Make functions available for import
 __all__ = ["generate_zone_file", "generate_zone_file_for_symbols"]
 
 if __name__ == "__main__":
