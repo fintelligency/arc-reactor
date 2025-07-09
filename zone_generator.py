@@ -35,7 +35,7 @@ def calculate_fib_pivots(symbol, year):
         start = f"{year}-01-01"
         end = f"{year}-12-31"
 
-        df = yf.download(yf_symbol, start=start, end=end, interval='1d', progress=False, auto_adjust=True)
+        df = yf.download(yf_symbol, start=start, end=end, interval='1d', progress=False, auto_adjust=False)
 
         if df.empty or 'Close' not in df.columns:
             raise ValueError("No valid data")
@@ -52,6 +52,9 @@ def calculate_fib_pivots(symbol, year):
         return dict({
             'Symbol': symbol,
             'Year': int(year + 1),
+            'High': round(high, 2),
+            'Low': round(low, 2),
+            'Close': round(close, 2),
             'PP': round(pp, 2),
             'S1': round(pp - 0.382 * r, 2),
             'S2': round(pp - 0.618 * r, 2),
@@ -82,7 +85,7 @@ def generate_zone_file(year=None, force=False):
         return None
 
     df = pd.DataFrame(result)
-    upload_to_gsheet(df, sheet_name="zones_2025")
+    upload_to_gsheet(df, sheet_name="trading_zones")
     return df
 
 def generate_zone_file_for_symbols(symbols, year=None):
@@ -102,7 +105,7 @@ def generate_zone_file_for_symbols(symbols, year=None):
         return None
 
     df = pd.DataFrame(result)
-    upload_to_gsheet(df, sheet_name="zones_2025")
+    upload_to_gsheet(df, sheet_name="trading_zones")
     return df
 
 __all__ = ["generate_zone_file", "generate_zone_file_for_symbols"]
