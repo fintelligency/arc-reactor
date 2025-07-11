@@ -1,33 +1,55 @@
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from config.config_loader import CONFIG
-from zone_generator import generate_zone_file, generate_zone_file_for_symbols
-import datetime
+from engine.entry_signals import check_signal_for_stock
+from upload.gdrive_sync import read_sheet
+import logging
+from telegram import Bot
+from config.config_loader import CONFIG
 
+def send_telegram_alert(message: str):
+    try:
+        bot = Bot(token=CONFIG["TELEGRAM_TOKEN"])
+        bot.send_message(chat_id=CONFIG.get("TELEGRAM_CHAT_ID"), text=message, parse_mode="Markdown")
+    except Exception as e:
+        print(f"[Telegram] ❌ Failed to send alert: {e}")
+
+# === Telegram Command: Start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zone ALL or /refresh_zone RELIANCE")
+    await update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zone or /signal SYMBOL.")
 
-async def refresh_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    year = datetime.datetime.now().year - 1
+# === Telegram Command: Refresh Zones (already present) ===
+# async def refresh_zones(...)
 
-    if not args or args[0].upper() == "ALL":
-        df = generate_zone_file(year=year, force=True)
-    else:
-        symbols = [s.strip().upper() for s in args]
-        df = generate_zone_file_for_symbols(symbols, year=year)
+# === NEW: Telegram Command: Signal ===
+async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not context.args:
+            await update.message.reply_text("❓ Usage: /signal SYMBOL")
+            return
 
-    if df is None or "Symbol" not in df.columns:
-        await update.message.reply_text("❌ Error: 'Symbol' — no valid zone data returned.")
-        return
+        symbol = context.args[0].upper()
+        sheet_id = CONFIG["GSHEET_ID"]
 
-    updated = df['Symbol'].tolist()
-    await update.message.reply_text(f"✅ Zones refreshed & uploaded for: {', '.join(updated)}")
+        zone_df = read_sheet(sheet_id, "trading_zones")
+        entry_log_df = read_sheet(sheet_id, "entry_log")
 
+        if symbol not in zone_df["Symbol"].values:
+            await update.message.reply_text(f"❌ Symbol {symbol} not found in zone sheet.")
+            return
+
+        row = zone_df[zone_df["Symbol"] == symbol].iloc[0]
+        check_signal_for_stock(row, entry_log_df)
+        await update.message.reply_text(f"✅ Signal checked for {symbol}")
+
+    except Exception as e:
+        logging.exception(e)
+        await update.message.reply_text(f"❌ Error: {e}")
+
+# === Start Bot ===
 def start_bot(config):
     app = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("refresh_zone", refresh_zones))
-
+    app.add_handler(CommandHandler("signal", signal))
+    # app.add_handler(CommandHandler("refresh_zone", refresh_zones)) ← already present
     app.run_polling()
