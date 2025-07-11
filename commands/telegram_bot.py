@@ -2,19 +2,16 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from config.config_loader import CONFIG
 from engine.entry_signals import check_signal_for_stock
+from engine.ic_entry import run_ic_entry_scan
 from upload.gdrive_sync import read_sheet
 import logging
 from telegram import Bot
-from config.config_loader import CONFIG
 
 # === Telegram Command: Start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zone or /signal SYMBOL.")
+    await update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zone, /signal SYMBOL, or /ic_entry.")
 
-# === Telegram Command: Refresh Zones (already present) ===
-# async def refresh_zones(...)
-
-# === NEW: Telegram Command: Signal ===
+# === Telegram Command: Signal ===
 async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args:
@@ -39,10 +36,15 @@ async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.exception(e)
         await update.message.reply_text(f"❌ Error: {e}")
 
+# === Telegram Command: IC Entry ===
+async def ic_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔍 Scanning for Iron Condor opportunities...")
+    run_ic_entry_scan()
+
 # === Start Bot ===
 def start_bot(config):
     app = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("signal", signal))
-    # app.add_handler(CommandHandler("refresh_zone", refresh_zones)) ← already present
+    app.add_handler(CommandHandler("ic_entry", ic_entry))
     app.run_polling()

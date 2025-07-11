@@ -58,3 +58,20 @@ def append_row(sheet_id, sheet_name, row_data):
         print(f"[GSheet] ✅ Appended to {sheet_name}: {row_data}")
     except Exception as e:
         print(f"[GSheet] ❌ Append failed: {e}")
+
+def append_to_gsheet(rows, sheet_name="ic_trades"):
+    sheet = CLIENT.open("ArcReactorMaster")
+    worksheet = sheet.worksheet(sheet_name)
+
+    try:
+        data = worksheet.get_all_records()
+        df_existing = pd.DataFrame(data)
+    except Exception as e:
+        print(f"[GSheet] ⚠️ Failed to fetch existing data: {e}")
+        df_existing = pd.DataFrame()
+
+    df_new = pd.DataFrame(rows)
+    df_combined = pd.concat([df_existing, df_new], ignore_index=True)
+    worksheet.clear()
+    worksheet.update([df_combined.columns.values.tolist()] + df_combined.values.tolist())
+    print(f"[GSheet] ✅ Appended {len(rows)} row(s) to {sheet_name}")
