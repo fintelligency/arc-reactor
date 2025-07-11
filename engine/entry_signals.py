@@ -6,7 +6,7 @@ import datetime
 from config.config_loader import CONFIG
 from config.strategy_loader import STRATEGY_CONFIG
 from upload.gdrive_sync import read_sheet, append_row
-from commands.telegram_bot import send_telegram_alert
+from utils.alert import send_telegram_alert
 
 MAX_YEARLY_CAP = STRATEGY_CONFIG.get("MAX_YEARLY_CAP", 100000)
 TRANCHE_SIZE = STRATEGY_CONFIG.get("TRANCHE_SIZE", 25000)

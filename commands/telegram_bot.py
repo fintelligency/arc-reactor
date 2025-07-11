@@ -7,13 +7,6 @@ import logging
 from telegram import Bot
 from config.config_loader import CONFIG
 
-def send_telegram_alert(message: str):
-    try:
-        bot = Bot(token=CONFIG["TELEGRAM_TOKEN"])
-        bot.send_message(chat_id=CONFIG.get("TELEGRAM_CHAT_ID"), text=message, parse_mode="Markdown")
-    except Exception as e:
-        print(f"[Telegram] ❌ Failed to send alert: {e}")
-
 # === Telegram Command: Start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zone or /signal SYMBOL.")
