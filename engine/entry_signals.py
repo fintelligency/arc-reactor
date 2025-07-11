@@ -1,69 +1,88 @@
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+# engine/entry_signals.py
+
+import yfinance as yf
 import pandas as pd
-import os
-import json
-from gspread.utils import ValueInputOption
+import datetime
+from config.config_loader import CONFIG
+from config.strategy_loader import STRATEGY_CONFIG
+from upload.gdrive_sync import read_sheet, append_row
+from commands.telegram_bot import send_telegram_alert
 
-# === Common Auth Setup ===
-SCOPE = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
-CREDS_DICT = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
-CREDS = ServiceAccountCredentials.from_json_keyfile_dict(CREDS_DICT, SCOPE)
-CLIENT = gspread.authorize(CREDS)
+MAX_YEARLY_CAP = STRATEGY_CONFIG.get("MAX_YEARLY_CAP", 100000)
+TRANCHE_SIZE = STRATEGY_CONFIG.get("TRANCHE_SIZE", 25000)
+ZONE_FIELDS = ['PP', 'S1', 'S2', 'S3']
 
-# === Upload Full Sheet (Zone Generator) ===
-def upload_to_gsheet(df_new, sheet_name="zones_2025"):
-    print(f"[GSheet] 🔎 df_new Columns: {getattr(df_new, 'columns', 'N/A')}")
-    if not isinstance(df_new, pd.DataFrame):
-        raise ValueError("[GSheet] ❌ df_new is not a DataFrame")
-    if df_new.empty:
-        raise ValueError("[GSheet] ❌ DataFrame is empty before upload.")
-    if "Symbol" not in df_new.columns:
-        raise ValueError(f"[GSheet] ❌ 'Symbol' column missing. Found: {df_new.columns.tolist()}")
+def get_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
-    sheet = CLIENT.open("ArcReactorMaster")
-    worksheet = sheet.worksheet(sheet_name)
+def is_bullish_candle(df):
+    return df['Close'].iloc[-1] > df['Open'].iloc[-1]
+
+def is_valid_zone_match(price, zone_price):
+    return abs(price - zone_price) / zone_price <= 0.01
+
+def check_signal_for_stock(row, entry_log_df):
+    symbol = row['Symbol']
+    year = row['Year']
+    yf_symbol = symbol + ".NS"
 
     try:
-        data = worksheet.get_all_records()
-        df_existing = pd.DataFrame(data)
-        if df_existing.empty or "Symbol" not in df_existing.columns:
-            print("[GSheet] ⚠️ Existing sheet missing or corrupt. Initializing new sheet.")
-            df_existing = pd.DataFrame(columns=df_new.columns)
+        df = yf.download(yf_symbol, period="3mo", interval="1d", progress=False, auto_adjust=False)
+        if df.empty:
+            return
+
+        latest = df.iloc[-1]
+        rsi = get_rsi(df['Close']).iloc[-1]
+        volume_avg = df['Volume'].rolling(20).mean().iloc[-1]
+        volume_current = latest['Volume']
+        volume_ratio = round(volume_current / volume_avg, 2) if volume_avg else 0
+        cmp = float(latest['Close'])
+
+        stock_entries = entry_log_df[(entry_log_df['Symbol'] == symbol) & (entry_log_df['Year'] == year)]
+        active_entries = stock_entries[stock_entries['Status'].str.lower() == 'active']
+        capital_used = active_entries['Amount'].sum()
+        if capital_used >= MAX_YEARLY_CAP:
+            return
+
+        used_zones = active_entries['Zone'].tolist()
+
+        for zone in ZONE_FIELDS:
+            zone_price = row[zone]
+            if not is_valid_zone_match(cmp, zone_price):
+                continue
+            if zone in used_zones:
+                continue
+
+            if zone in ['S2', 'S3']:
+                if rsi >= (40 if zone == 'S2' else 35):
+                    continue
+                if not is_bullish_candle(df):
+                    continue
+                if volume_ratio < 1:
+                    continue
+
+            msg = f"🟢 *BUY SIGNAL*: {symbol} @ {zone} ₹{cmp:.2f}\n" \
+                  f"🧠 RSI: {rsi:.1f} | Volume: {volume_ratio}x | Year: {year}\n" \
+                  f"💼 Zone: {zone} | Tranche: ₹{TRANCHE_SIZE:,}"
+            send_telegram_alert(msg)
+
+            entry_data = [symbol, year, zone, TRANCHE_SIZE, datetime.date.today().isoformat(), "active"]
+            append_row(CONFIG["GSHEET_ID"], "entry_log", entry_data)
+            break
+
     except Exception as e:
-        print(f"[GSheet] ⚠️ Failed to fetch existing data: {e}")
-        df_existing = pd.DataFrame(columns=df_new.columns)
+        print(f"[SignalEngine] ⚠️ Failed {symbol}: {e}")
 
-    for symbol in df_new["Symbol"]:
-        df_existing = df_existing[df_existing["Symbol"] != symbol]
-    df_combined = pd.concat([df_existing, df_new], ignore_index=True).sort_values(by="Symbol")
+def run_signal_engine():
+    zone_df = read_sheet(CONFIG["GSHEET_ID"], "trading_zones")
+    entry_log_df = read_sheet(CONFIG["GSHEET_ID"], "entry_log")
 
-    worksheet.clear()
-    worksheet.update([df_combined.columns.values.tolist()] + df_combined.values.tolist())
-    print(f"[GSheet] 🔁 Updated rows: {df_new['Symbol'].tolist()}")
+    for _, row in zone_df.iterrows():
+        check_signal_for_stock(row, entry_log_df)
 
-# === Read Sheet for Signal Engine ===
-def read_sheet(sheet_id, sheet_name):
-    try:
-        sheet = CLIENT.open_by_key(sheet_id).worksheet(sheet_name)
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        return df
-    except Exception as e:
-        print(f"[GSheet] ❌ Read failed: {e}")
-        return pd.DataFrame()
-
-# === Append Row for Signal Engine ===
-def append_row(sheet_id, sheet_name, row_data):
-    try:
-        sheet = CLIENT.open_by_key(sheet_id).worksheet(sheet_name)
-        sheet.append_row(row_data, value_input_option=ValueInputOption.user_entered)
-        print(f"[GSheet] ✅ Appended to {sheet_name}: {row_data}")
-    except Exception as e:
-        print(f"[GSheet] ❌ Append failed: {e}")
-
-# Optional
-__all__ = ["upload_to_gsheet", "read_sheet", "append_row"]
+if __name__ == "__main__":
+    run_signal_engine()
