@@ -4,12 +4,13 @@ import yfinance as yf
 import pandas as pd
 import datetime
 from config.config_loader import CONFIG
-from config.strategy_loader import STRATEGY_CONFIG
+from config.pp_loader import PP_SETTINGS
 from upload.gdrive_sync import read_sheet, append_row
 from utils.alert import send_telegram_alert
 
-MAX_YEARLY_CAP = STRATEGY_CONFIG.get("MAX_YEARLY_CAP", 100000)
-TRANCHE_SIZE = STRATEGY_CONFIG.get("TRANCHE_SIZE", 25000)
+MAX_CAP = PP_SETTINGS.get("MAX_YEARLY_CAP", 100000)
+TRANCHE = PP_SETTINGS.get("TRANCHE_SIZE", 25000)
+SIGNAL_CONFIG = PP_SETTINGS.get("SIGNAL_CONFIG", {})
 ZONE_FIELDS = ['PP', 'S1', 'S2', 'S3']
 
 def get_rsi(series, period=14):
