@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 import datetime
 from upload.gdrive_sync import append_to_gsheet
-from utils.alert import send_telegram_alert
+from utils.alerts import send_telegram_alert
 
 NSE_BASE = "https://www.nseindia.com"
 OC_URL = "https://www.nseindia.com/api/option-chain-indices?symbol=BANKNIFTY"

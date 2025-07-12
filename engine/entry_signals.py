@@ -6,7 +6,7 @@ import datetime
 from config.config_loader import CONFIG
 from config.pp_loader import PP_SETTINGS
 from upload.gdrive_sync import read_sheet, append_row
-from utils.alert import send_telegram_alert
+from utils.alerts import send_telegram_alert
 
 MAX_CAP = PP_SETTINGS.get("MAX_YEARLY_CAP", 100000)
 TRANCHE = PP_SETTINGS.get("TRANCHE_SIZE", 25000)
