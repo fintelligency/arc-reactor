@@ -15,10 +15,22 @@ HEADERS = {
 
 def fetch_option_chain():
     session = requests.Session()
-    session.get(NSE_BASE, headers=HEADERS)
-    response = session.get(OC_URL, headers=HEADERS)
-    data = response.json()
-    return data
+    session.headers.update(HEADERS)
+
+    try:
+        # Hit base page first to get cookies
+        session.get(NSE_BASE, headers=HEADERS, timeout=5)
+
+        # Then request the actual API
+        response = session.get(OC_URL, headers=HEADERS, timeout=10)
+        response.raise_for_status()  # Raise HTTP error if any
+
+        return response.json()
+
+    except Exception as e:
+        print(f"[ICEntry] ❌ NSE fetch failed: {e}")
+        raise
+
 
 def parse_option_chain(data):
     records = data['records']['data']
