@@ -15,21 +15,30 @@ HEADERS = {
 
 def fetch_option_chain():
     session = requests.Session()
-    session.headers.update(HEADERS)
+
+    # Step 1: Set headers
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.nseindia.com/",
+        "Connection": "keep-alive"
+    })
 
     try:
-        # Hit base page first to get cookies
-        session.get(NSE_BASE, headers=HEADERS, timeout=5)
+        # Step 2: Visit NSE homepage to get cookies
+        session.get("https://www.nseindia.com", timeout=5)
 
-        # Then request the actual API
-        response = session.get(OC_URL, headers=HEADERS, timeout=10)
-        response.raise_for_status()  # Raise HTTP error if any
+        # Step 3: Call the Option Chain API
+        response = session.get(OC_URL, timeout=10)
+        response.raise_for_status()
 
         return response.json()
 
     except Exception as e:
         print(f"[ICEntry] ❌ NSE fetch failed: {e}")
         raise
+
 
 
 def parse_option_chain(data):
