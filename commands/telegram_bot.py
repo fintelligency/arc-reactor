@@ -39,7 +39,7 @@ async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === Telegram Command: IC Entry ===
 async def ic_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 Scanning for Iron Condor opportunities...")
-    run_ic_entry_scan()
+    await run_ic_entry_scan()
 
 # === Start Bot ===
 def start_bot(config):
