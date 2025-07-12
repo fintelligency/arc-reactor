@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import datetime
+import asyncio
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
@@ -100,9 +101,9 @@ def log_and_alert_ic(ic_list, expiry):
         f"*IC #{i+1}*\nPE: {r['Sell PE']}/{r['Buy PE']}\nCE: {r['Sell CE']}/{r['Buy CE']}\n💰 Credit: ₹{r['Net Credit']}"
         for i, r in enumerate(rows)
     ])
-    send_telegram_alert(f"🟩 *Top IC Candidates ({expiry})*\n\n{message}")
+    asyncio.create_task(send_telegram_alert(f"🟩 *Top IC Candidates ({expiry})*\n\n{message}"))
 
-def run_ic_entry_scan():
+async def run_ic_entry_scan():
     try:
         data = fetch_option_chain()
         spot, expiry, df_ce, df_pe = parse_option_chain(data)
@@ -110,10 +111,10 @@ def run_ic_entry_scan():
         if ic_list:
             log_and_alert_ic(ic_list, expiry)
         else:
-            send_telegram_alert("⚠️ No valid Iron Condor found today.")
+            await send_telegram_alert("⚠️ No valid Iron Condor found today.")
     except Exception as e:
         print(f"[ICEntry] ❌ Error: {e}")
-        send_telegram_alert(f"❌ IC Scanner failed: {e}")
+        await send_telegram_alert(f"❌ IC Scanner failed: {e}")
 
 if __name__ == "__main__":
-    run_ic_entry_scan()
+    asyncio.run(run_ic_entry_scan())
