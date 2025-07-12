@@ -8,6 +8,7 @@ with open("config/config.json") as f:
 
 CONFIG = {
     "TELEGRAM_TOKEN": os.getenv("TELEGRAM_TOKEN", config_data.get("TELEGRAM_TOKEN")),
+    "TELEGRAM_CHAT_ID": os.getenv("TELEGRAM_CHAT_ID", config_data.get("TELEGRAM_CHAT_ID")),  # 🔧 Added!
     "GSHEET_ID": os.getenv("GSHEET_ID", config_data.get("GSHEET_ID")),
     "GSHEET_CREDS": json.loads(os.environ.get("GOOGLE_CREDENTIALS_JSON", "{}")),
 }
