@@ -6,7 +6,7 @@ from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
 
-def find_adaptive_ic_from_csv(csv_path):
+async def find_adaptive_ic_from_csv(csv_path):
     try:
         # Read skipping the first row
         df_raw = pd.read_csv(csv_path, skiprows=1)
@@ -80,7 +80,7 @@ def find_adaptive_ic_from_csv(csv_path):
 {chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}
 """
 
-        send_telegram_alert(summary)
+        await send_telegram_alert(summary)
         return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
 
     except Exception as e:
