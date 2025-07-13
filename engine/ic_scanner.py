@@ -87,7 +87,7 @@ def find_adaptive_ic_from_csv(csv_path):
         raise ValueError(f"❌ Error parsing CSV: {e}")
 
 
-def log_and_alert_ic_candidates(ic_list, expiry):
+async def log_and_alert_ic_candidates(ic_list, expiry):
     rows = []
     for ic in ic_list:
         row = {
@@ -111,4 +111,4 @@ def log_and_alert_ic_candidates(ic_list, expiry):
         for i, ic in enumerate(ic_list)
     ])
 
-    send_telegram_alert(f"🟢 *Top Adaptive IC Candidates ({expiry})*\n\n{msg}")
+    await send_telegram_alert(f"🟢 *Top Adaptive IC Candidates ({expiry})*\n\n{msg}")
