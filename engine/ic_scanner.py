@@ -1,45 +1,44 @@
+# engine/ic_scanner.py
+
 import pandas as pd
 import datetime
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
+
 def find_adaptive_ic_from_csv(csv_path):
     try:
-        # Read with header on second row (skip title row)
-        df_raw = pd.read_csv(csv_path, header=1)
-        df_raw.columns = [str(col).strip() for col in df_raw.columns]
+        # Read skipping the first row
+        df_raw = pd.read_csv(csv_path, skiprows=1)
 
-        # Dynamically detect the "Strike Price" column
-        strike_candidates = [col for col in df_raw.columns if "strike" in col.lower()]
-        if not strike_candidates:
-            raise ValueError("❌ Strike Price column not found.")
+        # Try to locate Strike column
+        strike_col = next((col for col in df_raw.columns if "strike" in col.lower()), None)
+        if not strike_col:
+            raise ValueError("❌ Strike column not found in uploaded file.")
 
-        strike_col = strike_candidates[0]
-
-        # Use numeric index to detect CE and PE LTP columns relative to Strike
-        strike_index = list(df_raw.columns).index(strike_col)
-
-        # Guard against out-of-bounds
-        if strike_index < 1 or strike_index + 1 >= len(df_raw.columns):
-            raise ValueError("❌ Can't locate LTP columns near Strike Price.")
-
-        ce_ltp_col = df_raw.columns[strike_index - 1]
-        pe_ltp_col = df_raw.columns[strike_index + 1]
+        strike_idx = list(df_raw.columns).index(strike_col)
+        ce_ltp_col = df_raw.columns[strike_idx - 1]
+        pe_ltp_col = df_raw.columns[strike_idx + 1]
 
         df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
         df.columns = ["strike", "ce_ltp", "pe_ltp"]
 
-        # Clean and convert
-        df = df.dropna()
+        df.dropna(inplace=True)
         df["strike"] = pd.to_numeric(df["strike"], errors="coerce")
         df["ce_ltp"] = pd.to_numeric(df["ce_ltp"], errors="coerce")
         df["pe_ltp"] = pd.to_numeric(df["pe_ltp"], errors="coerce")
-        df = df.dropna().sort_values(by="strike").reset_index(drop=True)
+        df.dropna(inplace=True)
+        df.sort_values("strike", inplace=True)
+        df.reset_index(drop=True, inplace=True)
 
         ic_list = []
+        max_credit_seen = 0
+        total_checked = 0
+        skip_reasons = []
 
         for i in range(len(df)):
-            for j in range(i + 4, len(df)):
+            for j in range(i + 4, len(df)):  # Ensure 800pt diff
+                total_checked += 1
                 ce_sell = df.iloc[j]["strike"]
                 pe_sell = df.iloc[i]["strike"]
                 ce_ltp = df.iloc[j]["ce_ltp"]
@@ -52,6 +51,7 @@ def find_adaptive_ic_from_csv(csv_path):
                 pe_buy_row = df[df["strike"] == pe_buy_strike]
 
                 if ce_buy_row.empty or pe_buy_row.empty:
+                    skip_reasons.append(f"{pe_sell}/{ce_sell} → Hedge strikes missing")
                     continue
 
                 ce_buy = ce_buy_row["ce_ltp"].values[0]
@@ -59,7 +59,10 @@ def find_adaptive_ic_from_csv(csv_path):
                 net_credit = ce_ltp + pe_ltp - ce_buy - pe_buy
 
                 if net_credit <= 0:
+                    skip_reasons.append(f"{pe_sell}/{ce_sell} → Net credit ≤ 0")
                     continue
+
+                max_credit_seen = max(max_credit_seen, net_credit)
 
                 ic_list.append({
                     "sell_pe": int(pe_sell),
@@ -69,10 +72,20 @@ def find_adaptive_ic_from_csv(csv_path):
                     "net_credit": round(net_credit, 2)
                 })
 
+        summary = f"""🧪 *IC Scan Summary*
+• Total combos scanned: {total_checked}
+• Max credit observed: ₹{round(max_credit_seen, 2)}
+• Valid ICs found: {len(ic_list)}
+• Skipped examples: 
+{chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}
+"""
+
+        send_telegram_alert(summary)
         return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
 
     except Exception as e:
-        raise Exception(f"❌ Error parsing CSV: {e}")
+        raise ValueError(f"❌ Error parsing CSV: {e}")
+
 
 def log_and_alert_ic_candidates(ic_list, expiry):
     rows = []
