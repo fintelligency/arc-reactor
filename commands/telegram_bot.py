@@ -1,15 +1,17 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update, Document
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from config.config_loader import CONFIG
 from engine.entry_signals import check_signal_for_stock
-from engine.ic_entry import run_ic_entry_scan
+from engine.ic_scanner import find_adaptive_ic_from_csv, log_and_alert_ic_candidates
 from upload.gdrive_sync import read_sheet
 import logging
-from telegram import Bot
+import os
+import tempfile
+import datetime
 
 # === Telegram Command: Start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zone, /signal SYMBOL, or /ic_entry.")
+    await update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zone, /signal SYMBOL, or upload IC CSV using /ic_entry.")
 
 # === Telegram Command: Signal ===
 async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -36,15 +38,33 @@ async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.exception(e)
         await update.message.reply_text(f"❌ Error: {e}")
 
-# === Telegram Command: IC Entry ===
-async def ic_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔍 Scanning for Iron Condor opportunities...")
-    await run_ic_entry_scan()
+# === Telegram CSV Upload for IC ===
+async def upload_ic_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    doc = update.message.document
+    if not doc.file_name.endswith(".csv"):
+        await update.message.reply_text("⚠️ Please upload a valid CSV file.")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = os.path.join(tmpdir, doc.file_name)
+        new_file = await context.bot.get_file(doc.file_id)
+        await new_file.download_to_drive(file_path)
+
+        try:
+            ic_list = find_adaptive_ic_from_csv(file_path)
+            expiry_guess = datetime.datetime.now().strftime("%d-%b-%Y")
+            if ic_list:
+                log_and_alert_ic_candidates(ic_list, expiry_guess)
+                await update.message.reply_text("✅ IC candidates scanned and logged.")
+            else:
+                await update.message.reply_text("⚠️ No valid ICs found.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Failed to scan IC: {e}")
 
 # === Start Bot ===
 def start_bot(config):
     app = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("signal", signal))
-    app.add_handler(CommandHandler("ic_entry", ic_entry))
+    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("csv"), upload_ic_csv))
     app.run_polling()
