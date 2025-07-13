@@ -8,10 +8,10 @@ from utils.alerts import send_telegram_alert
 
 async def find_adaptive_ic_from_csv(csv_path):
     try:
-        # Read skipping the first row
+        # Read skipping the first row (usually the title row)
         df_raw = pd.read_csv(csv_path, skiprows=1)
 
-        # Try to locate Strike column
+        # Try to locate Strike Price column
         strike_col = next((col for col in df_raw.columns if "strike" in col.lower()), None)
         if not strike_col:
             raise ValueError("❌ Strike column not found in uploaded file.")
@@ -23,6 +23,7 @@ async def find_adaptive_ic_from_csv(csv_path):
         df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
         df.columns = ["strike", "ce_ltp", "pe_ltp"]
 
+        # Cleanup
         df.dropna(inplace=True)
         df["strike"] = pd.to_numeric(df["strike"], errors="coerce")
         df["ce_ltp"] = pd.to_numeric(df["ce_ltp"], errors="coerce")
@@ -37,7 +38,7 @@ async def find_adaptive_ic_from_csv(csv_path):
         skip_reasons = []
 
         for i in range(len(df)):
-            for j in range(i + 4, len(df)):  # Ensure 800pt diff
+            for j in range(i + 4, len(df)):  # Ensure 800pt difference
                 total_checked += 1
                 ce_sell = df.iloc[j]["strike"]
                 pe_sell = df.iloc[i]["strike"]
@@ -72,6 +73,7 @@ async def find_adaptive_ic_from_csv(csv_path):
                     "net_credit": round(net_credit, 2)
                 })
 
+        # Send scan summary
         summary = f"""🧪 *IC Scan Summary*
 • Total combos scanned: {total_checked}
 • Max credit observed: ₹{round(max_credit_seen, 2)}
@@ -79,8 +81,8 @@ async def find_adaptive_ic_from_csv(csv_path):
 • Skipped examples: 
 {chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}
 """
-
         await send_telegram_alert(summary)
+
         return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
 
     except Exception as e:
