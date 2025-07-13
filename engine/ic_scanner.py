@@ -23,6 +23,14 @@ async def find_adaptive_ic_from_csv(csv_path):
         df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
         df.columns = ["strike", "ce_ltp", "pe_ltp"]
 
+
+        print("🔍 Cleaned DataFrame:")
+        print(df.head())
+        print(f"✅ Rows after cleanup: {len(df)}")
+
+        if len(df) < 5:
+            raise ValueError("❌ Not enough valid strikes to form IC combinations.")
+
         # Cleanup
         df.dropna(inplace=True)
         df["strike"] = pd.to_numeric(df["strike"], errors="coerce")
