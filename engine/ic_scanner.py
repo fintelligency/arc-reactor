@@ -5,19 +5,31 @@ from utils.alerts import send_telegram_alert
 
 def find_adaptive_ic_from_csv(csv_path):
     try:
-        df_raw = pd.read_csv(csv_path, header=None)
+        # Read with header on second row (skip title row)
+        df_raw = pd.read_csv(csv_path, header=1)
+        df_raw.columns = [str(col).strip() for col in df_raw.columns]
 
-        df_raw.columns = [
-            "CE_OI", "CE_Chg_OI", "CE_Volume", "CE_IV", "CE_LTP", "CE_Chg",
-            "CE_BidQty", "CE_Bid", "CE_Ask", "CE_AskQty",
-            "Strike",
-            "PE_BidQty", "PE_Bid", "PE_Ask", "PE_AskQty", "PE_Chg", "PE_LTP",
-            "PE_IV", "PE_Volume", "PE_Chg_OI", "PE_OI"
-        ]
+        # Dynamically detect the "Strike Price" column
+        strike_candidates = [col for col in df_raw.columns if "strike" in col.lower()]
+        if not strike_candidates:
+            raise ValueError("❌ Strike Price column not found.")
 
-        df = df_raw[["Strike", "CE_LTP", "PE_LTP"]].copy()
+        strike_col = strike_candidates[0]
+
+        # Use numeric index to detect CE and PE LTP columns relative to Strike
+        strike_index = list(df_raw.columns).index(strike_col)
+
+        # Guard against out-of-bounds
+        if strike_index < 1 or strike_index + 1 >= len(df_raw.columns):
+            raise ValueError("❌ Can't locate LTP columns near Strike Price.")
+
+        ce_ltp_col = df_raw.columns[strike_index - 1]
+        pe_ltp_col = df_raw.columns[strike_index + 1]
+
+        df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
         df.columns = ["strike", "ce_ltp", "pe_ltp"]
 
+        # Clean and convert
         df = df.dropna()
         df["strike"] = pd.to_numeric(df["strike"], errors="coerce")
         df["ce_ltp"] = pd.to_numeric(df["ce_ltp"], errors="coerce")
@@ -27,7 +39,7 @@ def find_adaptive_ic_from_csv(csv_path):
         ic_list = []
 
         for i in range(len(df)):
-            for j in range(i + 4, len(df)):  # 800-point spread
+            for j in range(i + 4, len(df)):
                 ce_sell = df.iloc[j]["strike"]
                 pe_sell = df.iloc[i]["strike"]
                 ce_ltp = df.iloc[j]["ce_ltp"]
