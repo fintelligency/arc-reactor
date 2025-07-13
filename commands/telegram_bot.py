@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes,
-    MessageHandler, filters
+    MessageHandler
 )
 from telegram.ext.filters import MessageFilter
 from config.config_loader import CONFIG
@@ -62,10 +62,11 @@ async def upload_ic_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await new_file.download_to_drive(file_path)
 
         try:
-            ic_list = find_adaptive_ic_from_csv(file_path)
+            ic_list = await find_adaptive_ic_from_csv(file_path)
             expiry_guess = datetime.datetime.now().strftime("%d-%b-%Y")
+
             if ic_list:
-                log_and_alert_ic_candidates(ic_list, expiry_guess)
+                await log_and_alert_ic_candidates(ic_list, expiry_guess)
                 await update.message.reply_text("✅ IC candidates scanned and logged.")
             else:
                 await update.message.reply_text("⚠️ No valid ICs found.")
