@@ -5,40 +5,31 @@ import datetime
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
-
 async def find_adaptive_ic_from_csv(csv_path):
     try:
-        # Read skipping the first row (usually the title row)
+        # Load CSV skipping header noise
         df_raw = pd.read_csv(csv_path, skiprows=1)
 
-        # Try to locate Strike Price column
-        strike_col = next((col for col in df_raw.columns if "strike" in col.lower()), None)
-        if not strike_col:
-            raise ValueError("❌ Strike column not found in uploaded file.")
+        # Map fixed column indexes for NSE format
+        strike_col = df_raw.columns[10]
+        ce_ltp_col = df_raw.columns[4]
+        pe_ltp_col = df_raw.columns[16]
 
-        strike_idx = list(df_raw.columns).index(strike_col)
-        ce_ltp_col = df_raw.columns[strike_idx - 1]
-        pe_ltp_col = df_raw.columns[strike_idx + 1]
-
+        # Extract and clean necessary columns
         df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
         df.columns = ["strike", "ce_ltp", "pe_ltp"]
 
+        # Clean commas and convert to numbers
+        df["strike"] = pd.to_numeric(df["strike"].astype(str).str.replace(",", ""), errors="coerce")
+        df["ce_ltp"] = pd.to_numeric(df["ce_ltp"].astype(str).str.replace(",", ""), errors="coerce")
+        df["pe_ltp"] = pd.to_numeric(df["pe_ltp"].astype(str).str.replace(",", ""), errors="coerce")
 
-        print("🔍 Cleaned DataFrame:")
-        print(df.head())
-        print(f"✅ Rows after cleanup: {len(df)}")
-
-        if len(df) < 5:
-            raise ValueError("❌ Not enough valid strikes to form IC combinations.")
-
-        # Cleanup
-        df.dropna(inplace=True)
-        df["strike"] = pd.to_numeric(df["strike"], errors="coerce")
-        df["ce_ltp"] = pd.to_numeric(df["ce_ltp"], errors="coerce")
-        df["pe_ltp"] = pd.to_numeric(df["pe_ltp"], errors="coerce")
         df.dropna(inplace=True)
         df.sort_values("strike", inplace=True)
         df.reset_index(drop=True, inplace=True)
+
+        print(f"[ICScanner] 🔍 Cleaned DataFrame:\n\n{df.head()}")
+        print(f"[ICScanner] ✅ Rows after cleanup: {len(df)}")
 
         ic_list = []
         max_credit_seen = 0
@@ -46,7 +37,7 @@ async def find_adaptive_ic_from_csv(csv_path):
         skip_reasons = []
 
         for i in range(len(df)):
-            for j in range(i + 4, len(df)):  # Ensure 800pt difference
+            for j in range(i + 4, len(df)):  # Ensure minimum spread
                 total_checked += 1
                 ce_sell = df.iloc[j]["strike"]
                 pe_sell = df.iloc[i]["strike"]
@@ -81,21 +72,19 @@ async def find_adaptive_ic_from_csv(csv_path):
                     "net_credit": round(net_credit, 2)
                 })
 
-        # Send scan summary
         summary = f"""🧪 *IC Scan Summary*
 • Total combos scanned: {total_checked}
 • Max credit observed: ₹{round(max_credit_seen, 2)}
 • Valid ICs found: {len(ic_list)}
-• Skipped examples: 
+• Skipped examples:
 {chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}
 """
-        await send_telegram_alert(summary)
 
+        await send_telegram_alert(summary)
         return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
 
     except Exception as e:
         raise ValueError(f"❌ Error parsing CSV: {e}")
-
 
 async def log_and_alert_ic_candidates(ic_list, expiry):
     rows = []
