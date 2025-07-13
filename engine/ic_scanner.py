@@ -9,18 +9,17 @@ async def find_adaptive_ic_from_csv(csv_path):
        # Read skipping the first row
        df_raw = pd.read_csv(csv_path, skiprows=1)
 
-       # Hardcoded based on known format
-       ce_ltp_col = df_raw.columns[4]   # CE LTP
-       strike_col = df_raw.columns[10]  # STRIKE
-       pe_ltp_col = df_raw.columns[16]  # PE LTP
+       # Use fixed columns based on known structure
+       strike_col = df_raw.columns[10]
+       ce_ltp_col = df_raw.columns[5]
+       pe_ltp_col = df_raw.columns[16]
 
        df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
        df.columns = ["strike", "ce_ltp", "pe_ltp"]
 
-       df.dropna(inplace=True)
-       df["strike"] = pd.to_numeric(df["strike"].astype(str).str.replace(",", ""), errors="coerce")
-       df["ce_ltp"] = pd.to_numeric(df["ce_ltp"].astype(str).str.replace(",", ""), errors="coerce")
-       df["pe_ltp"] = pd.to_numeric(df["pe_ltp"].astype(str).str.replace(",", ""), errors="coerce")
+       # Remove commas and convert to float
+       for col in ["strike", "ce_ltp", "pe_ltp"]:
+           df[col] = df[col].astype(str).str.replace(",", "").astype(float)
 
        df.dropna(inplace=True)
        df.sort_values("strike", inplace=True)
