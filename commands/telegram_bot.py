@@ -1,5 +1,9 @@
-from telegram import Update, Document
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, ContextTypes,
+    MessageHandler, filters
+)
+from telegram.ext.filters import MessageFilter
 from config.config_loader import CONFIG
 from engine.entry_signals import check_signal_for_stock
 from engine.ic_scanner import find_adaptive_ic_from_csv, log_and_alert_ic_candidates
@@ -8,6 +12,13 @@ import logging
 import os
 import tempfile
 import datetime
+
+# === Custom CSV File Filter ===
+class CSVFileFilter(MessageFilter):
+    def filter(self, message):
+        return message.document and message.document.file_name.endswith(".csv")
+
+csv_filter = CSVFileFilter()
 
 # === Telegram Command: Start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -66,5 +77,5 @@ def start_bot(config):
     app = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("signal", signal))
-    app.add_handler(MessageHandler(filters.Document.FILE_NAME.regex(r".*\.csv$"), upload_ic_csv))
+    app.add_handler(MessageHandler(csv_filter, upload_ic_csv))
     app.run_polling()
