@@ -6,24 +6,37 @@ from utils.alerts import send_telegram_alert
 
 async def find_adaptive_ic_from_csv(csv_path):
    try:
-       # Read skipping the first row
        df_raw = pd.read_csv(csv_path, skiprows=1)
 
-       # Use fixed columns based on known structure
-       strike_col = df_raw.columns[10]
-       ce_ltp_col = df_raw.columns[5]
-       pe_ltp_col = df_raw.columns[16]
+       # 🔍 Dynamically find strike column (usually 11th)
+       strike_col = next((col for col in df_raw.columns if "strike" in col.lower()), None)
+       if not strike_col:
+           raise ValueError("❌ Strike column not found in uploaded file.")
+
+       strike_idx = list(df_raw.columns).index(strike_col)
+
+       ce_ltp_col = df_raw.columns[strike_idx - 1]
+       pe_ltp_col = df_raw.columns[strike_idx + 1]
 
        df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
        df.columns = ["strike", "ce_ltp", "pe_ltp"]
 
-       # Remove commas and convert to float
+       # 🔧 Clean and convert
        for col in ["strike", "ce_ltp", "pe_ltp"]:
-           df[col] = df[col].astype(str).str.replace(",", "").astype(float)
+           df[col] = (
+               df[col]
+               .astype(str)
+               .str.replace(",", "", regex=False)
+               .replace("-", None)
+               .astype(float)
+           )
 
        df.dropna(inplace=True)
        df.sort_values("strike", inplace=True)
        df.reset_index(drop=True, inplace=True)
+
+       print(f"\n🔍 Cleaned DataFrame:\n{df.head()}")
+       print(f"✅ Rows after cleanup: {len(df)}")
 
        ic_list = []
        max_credit_seen = 0
@@ -31,7 +44,7 @@ async def find_adaptive_ic_from_csv(csv_path):
        skip_reasons = []
 
        for i in range(len(df)):
-           for j in range(i + 4, len(df)):  # Ensure 800pt diff
+           for j in range(i + 4, len(df)):  # Minimum 800 pt diff
                total_checked += 1
                ce_sell = df.iloc[j]["strike"]
                pe_sell = df.iloc[i]["strike"]
