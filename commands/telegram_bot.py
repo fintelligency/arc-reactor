@@ -66,5 +66,5 @@ def start_bot(config):
     app = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("signal", signal))
-    app.add_handler(MessageHandler(filters.Document.FILE_EXTENSION("csv"), upload_ic_csv))
+    app.add_handler(MessageHandler(filters.Document.MIME_TYPE("text/csv"), upload_ic_csv))
     app.run_polling()
