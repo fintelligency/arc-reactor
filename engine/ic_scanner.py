@@ -24,28 +24,22 @@ async def find_adaptive_ic_from_csv(csv_path):
 
         df_raw = pd.read_csv(csv_path, skiprows=1, thousands=",")
 
-        # Identify Strike Column
         strike_col = next((col for col in df_raw.columns if "strike" in col.lower()), None)
         if not strike_col:
             raise ValueError("❌ Strike column not found in uploaded file.")
 
         strike_idx = list(df_raw.columns).index(strike_col)
-
-        # Adjust LTP column offsets
         ce_ltp_col = df_raw.columns[strike_idx - 6]
         pe_ltp_col = df_raw.columns[strike_idx + 6]
 
         df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
         df.columns = ["strike", "ce_ltp", "pe_ltp"]
 
-        # Clean and convert
-        df.replace("-", 0, inplace=True)
         df.dropna(inplace=True)
-        df["strike"] = pd.to_numeric(df["strike"], errors="coerce")
-        df["ce_ltp"] = pd.to_numeric(df["ce_ltp"], errors="coerce")
-        df["pe_ltp"] = pd.to_numeric(df["pe_ltp"], errors="coerce")
+        df["strike"] = pd.to_numeric(df["strike"].astype(str).str.replace(",", ""), errors="coerce")
+        df["ce_ltp"] = pd.to_numeric(df["ce_ltp"].astype(str).str.replace(",", ""), errors="coerce")
+        df["pe_ltp"] = pd.to_numeric(df["pe_ltp"].astype(str).str.replace(",", ""), errors="coerce")
         df.dropna(inplace=True)
-        df = df[df["strike"] > 0]
         df.sort_values("strike", inplace=True)
         df.reset_index(drop=True, inplace=True)
 
@@ -55,18 +49,17 @@ async def find_adaptive_ic_from_csv(csv_path):
         skip_reasons = []
 
         for i in range(len(df)):
-            for j in range(i + 4, len(df)):
+            for j in range(i + 4, len(df)):  # Ensure 800pt diff
                 total_checked += 1
-                ce_sell = df.at[j, "strike"]
-                pe_sell = df.at[i, "strike"]
+                ce_sell = float(df.iloc[j]["strike"])
+                pe_sell = float(df.iloc[i]["strike"])
 
-                # Only select OTM strikes
                 if pe_sell > spot or ce_sell < spot:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → One leg ITM")
                     continue
 
-                ce_ltp = df.at[j, "ce_ltp"]
-                pe_ltp = df.at[i, "pe_ltp"]
+                ce_ltp = float(df.iloc[j]["ce_ltp"])
+                pe_ltp = float(df.iloc[i]["pe_ltp"])
 
                 ce_buy_strike = ce_sell + 800
                 pe_buy_strike = pe_sell - 800
@@ -78,8 +71,8 @@ async def find_adaptive_ic_from_csv(csv_path):
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Hedge strikes missing")
                     continue
 
-                ce_buy = ce_buy_row["ce_ltp"].iloc[0]
-                pe_buy = pe_buy_row["pe_ltp"].iloc[0]
+                ce_buy = float(ce_buy_row["ce_ltp"].values[0])
+                pe_buy = float(pe_buy_row["pe_ltp"].values[0])
                 net_credit = ce_ltp + pe_ltp - ce_buy - pe_buy
 
                 if net_credit <= 0:
@@ -103,8 +96,8 @@ async def find_adaptive_ic_from_csv(csv_path):
 • Skipped examples: 
 {chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}
 """
-        await send_telegram_alert(summary)
 
+        await send_telegram_alert(summary)
         return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
 
     except Exception as e:
