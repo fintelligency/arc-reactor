@@ -4,17 +4,24 @@ import yfinance as yf
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
-
 def get_banknifty_spot():
     try:
         df = yf.download("^NSEBANK", period="1d", interval="1m")
-        if df.empty:
-            raise ValueError("Empty spot data")
-        return round(df['Close'].iloc[-1], 2)
+        if df.empty or "Close" not in df.columns:
+            raise ValueError("Empty or malformed spot data")
+
+        spot_val = df["Close"].dropna().iloc[-1]
+
+        if pd.isna(spot_val):
+            raise ValueError("Spot value is NaN")
+
+        spot_val = float(spot_val)
+        print(f"[DEBUG] Spot price: {spot_val}")
+        return round(spot_val, 2)
+
     except Exception as e:
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
-
 
 async def find_adaptive_ic_from_csv(csv_path):
     try:
@@ -65,6 +72,9 @@ async def find_adaptive_ic_from_csv(csv_path):
                 total_checked += 1
                 ce_sell = float(df.iloc[j]["strike"])
                 pe_sell = float(df.iloc[i]["strike"])
+
+                if not isinstance(spot, (int, float)):
+                    raise ValueError(f"❌ Spot is not numeric: {spot}")
 
                 if pe_sell > spot or ce_sell < spot:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → One leg ITM")
