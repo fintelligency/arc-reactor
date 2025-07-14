@@ -79,6 +79,11 @@ async def find_adaptive_ic_from_csv(csv_path):
                 ce_buy_row = df[df["strike"] == ce_buy_strike]
                 pe_buy_row = df[df["strike"] == pe_buy_strike]
 
+                print(f"[DEBUG] Checking hedges: CE {ce_buy_strike}, PE {pe_buy_strike}")
+                print(f"[DEBUG] ce_buy_row:\n{ce_buy_row}")
+                print(f"[DEBUG] pe_buy_row:\n{pe_buy_row}")
+
+
                 if ce_buy_row.empty or pe_buy_row.empty:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Hedge strikes missing")
                     continue
@@ -88,11 +93,18 @@ async def find_adaptive_ic_from_csv(csv_path):
                     continue
 
                 try:
-                    # 🛠 Sanity debug
-                    print(f"[DEBUG] Hedging LTPs: CE row = {ce_buy_row[['strike', 'ce_ltp']]}, PE row = {pe_buy_row[['strike', 'pe_ltp']]}")
+                    ce_buy_series = ce_buy_row["ce_ltp"]
+                    pe_buy_series = pe_buy_row["pe_ltp"]
 
-                    ce_buy = float(ce_buy_row.iloc[0]["ce_ltp"])
-                    pe_buy = float(pe_buy_row.iloc[0]["pe_ltp"])
+                    print(f"[DEBUG] ce_buy_series = {ce_buy_series}")
+                    print(f"[DEBUG] pe_buy_series = {pe_buy_series}")
+
+                    if ce_buy_series.shape[0] != 1 or pe_buy_series.shape[0] != 1:
+                        skip_reasons.append(f"{pe_sell}/{ce_sell} → Ambiguous hedge row shape")
+                        continue
+
+                    ce_buy = float(ce_buy_series.iloc[0])
+                    pe_buy = float(pe_buy_series.iloc[0])
                 except Exception as e:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Error reading hedge LTP: {str(e)}")
                     continue
