@@ -7,26 +7,31 @@ from utils.alerts import send_telegram_alert
 def get_banknifty_spot():
     try:
         df = yf.download("^NSEBANK", period="1d", interval="1m", auto_adjust=False)
-        if df.empty:
-            raise ValueError("Empty spot data")
 
-        close_series = df['Close'].dropna()
+        print(f"[DEBUG] Raw YF df shape: {df.shape}")
+        print(f"[DEBUG] Columns: {df.columns.tolist()}")
+        print(f"[DEBUG] Tail:\n{df.tail()}")
 
-        if close_series.empty:
-            raise ValueError("No valid close values found")
+        if df.empty or "Close" not in df.columns:
+            raise ValueError("❌ Spot data missing or corrupted")
 
-        # Take the last valid scalar value safely
-        spot = close_series.iloc[-1]
-        if pd.isna(spot):
-            raise ValueError("Last close value is NaN")
+        # Drop NaNs and reset index to avoid ambiguity
+        close_prices = df["Close"].dropna().reset_index(drop=True)
 
-        spot = float(spot)
-        print(f"[DEBUG] BANKNIFTY Spot Price: {spot}")
-        return round(spot, 2)
+        if close_prices.empty:
+            raise ValueError("❌ No valid closing prices")
+
+        spot = close_prices.iloc[-1]
+        if isinstance(spot, pd.Series):
+            raise ValueError("❌ Ambiguous Series in spot fetch")
+
+        print(f"[DEBUG] Spot extracted: {spot}")
+        return round(float(spot), 2)
 
     except Exception as e:
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
+
 
 
 async def find_adaptive_ic_from_csv(csv_path):
