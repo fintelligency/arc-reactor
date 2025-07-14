@@ -18,7 +18,7 @@ async def find_adaptive_ic_from_csv(csv_path):
     try:
         # 📥 Read CSV: skip title row, load clean header
         df_raw = pd.read_csv(csv_path, skiprows=1, thousands=",")
-        df_raw.columns = df_raw.columns.str.strip()  # Clean spaces
+        df_raw.columns = df_raw.columns.str.strip()
 
         # 🔍 Detect STRIKE column
         strike_col = next((col for col in df_raw.columns if "strike" in col.lower()), None)
@@ -31,14 +31,21 @@ async def find_adaptive_ic_from_csv(csv_path):
         if strike_idx < 6 or strike_idx + 6 >= len(df_raw.columns):
             raise ValueError("❌ Column offset for LTPs is out of range.")
 
-        ce_ltp_col = df_raw.columns[strike_idx - 6]  # CALL LTP (left)
-        pe_ltp_col = df_raw.columns[strike_idx + 6]  # PUT LTP (right)
+        ce_ltp_col = df_raw.columns[strike_idx - 6]
+        pe_ltp_col = df_raw.columns[strike_idx + 6]
 
         print(f"[DEBUG] STRIKE: {strike_col}, CE_LTP: {ce_ltp_col}, PE_LTP: {pe_ltp_col}")
+        print(f"[DEBUG] Types → strike_col: {type(strike_col)}, ce_ltp_col: {type(ce_ltp_col)}, pe_ltp_col: {type(pe_ltp_col)}")
 
-        # 🧼 Clean dataframe
-        df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
-        df.columns = ["strike", "ce_ltp", "pe_ltp"]
+        if strike_col is None or ce_ltp_col is None or pe_ltp_col is None:
+            raise ValueError(f"❌ Required columns not found:\nStrike: {strike_col}\nCE LTP: {ce_ltp_col}\nPE LTP: {pe_ltp_col}")
+
+        # ✅ Explicit mapping to avoid duplicate 'LTP' ambiguity
+        df = pd.DataFrame({
+            "strike": df_raw[strike_col],
+            "ce_ltp": df_raw[ce_ltp_col],
+            "pe_ltp": df_raw[pe_ltp_col]
+        })
 
         df.dropna(inplace=True)
         df["strike"] = pd.to_numeric(df["strike"].astype(str).str.replace(",", ""), errors="coerce")
