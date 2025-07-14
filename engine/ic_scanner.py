@@ -4,24 +4,34 @@ import yfinance as yf
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
+
 def get_banknifty_spot():
     try:
         df = yf.download("^NSEBANK", period="1d", interval="1m")
-        if df.empty or "Close" not in df.columns:
-            raise ValueError("Empty or malformed spot data")
 
-        spot_val = df["Close"].dropna().iloc[-1]
+        if df.empty:
+            raise ValueError("Empty spot data")
+
+        if "Close" not in df.columns:
+            raise ValueError("Missing 'Close' column in spot data")
+
+        close_series = df["Close"].dropna()
+        if close_series.empty:
+            raise ValueError("Close series is empty after dropna()")
+
+        spot_val = close_series.iloc[-1]
 
         if pd.isna(spot_val):
             raise ValueError("Spot value is NaN")
 
-        spot_val = float(spot_val)
-        print(f"[DEBUG] Spot price: {spot_val}")
-        return round(spot_val, 2)
+        spot = float(spot_val)
+        print(f"[DEBUG] Spot price: {spot}")
+        return round(spot, 2)
 
     except Exception as e:
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
+
 
 async def find_adaptive_ic_from_csv(csv_path):
     try:
