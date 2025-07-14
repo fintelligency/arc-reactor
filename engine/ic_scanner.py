@@ -6,26 +6,31 @@ from utils.alerts import send_telegram_alert
 
 def get_banknifty_spot():
     try:
-        df = yf.download("^NSEBANK", period="1d", interval="1m")
+        df = yf.download("^NSEBANK", period="1d", interval="1m", auto_adjust=False)
+
         print(f"[DEBUG] Raw YF df shape: {df.shape}")
+        print(f"[DEBUG] Columns: {df.columns}")
 
-        if df.empty:
-            raise ValueError("❌ Empty DataFrame returned from yfinance")
+        # If MultiIndex (e.g., from yfinance with multiple tickers)
+        if isinstance(df.columns, pd.MultiIndex):
+            # Try to extract 'Close' column for '^NSEBANK'
+            if ('Close', '^NSEBANK') in df.columns:
+                close_series = df[('Close', '^NSEBANK')]
+            else:
+                raise ValueError("❌ 'Close' column not found in MultiIndex")
+        else:
+            if "Close" in df.columns:
+                close_series = df["Close"]
+            else:
+                raise ValueError("❌ 'Close' column not found in flat index")
 
-        df.columns = df.columns.str.strip()
-        print(f"[DEBUG] Flattened Columns: {df.columns.tolist()}")
-
-        if "Close" not in df.columns:
-            raise ValueError("❌ 'Close' column not found in YF data")
-
-        spot = df["Close"].iloc[-1]
+        spot = close_series.dropna().iloc[-1]
         print(f"[DEBUG] Spot extracted: {spot}")
         return round(spot, 2)
 
     except Exception as e:
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
-
 
 async def find_adaptive_ic_from_csv(csv_path):
     try:
