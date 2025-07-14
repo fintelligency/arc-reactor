@@ -1,6 +1,7 @@
 import pandas as pd
 import datetime
 import yfinance as yf
+import re
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
@@ -32,8 +33,27 @@ def get_banknifty_spot():
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
 
+def extract_expiry_from_filename(filename: str) -> str:
+    import os
+    base = os.path.basename(filename).split('.')[0]
+    match = re.search(r'(\d{1,2})-([A-Za-z]{3})-(\d{4})', base)
+    if not match:
+        print("[DEBUG] No expiry found in filename, defaulting to today.")
+        return datetime.datetime.now().strftime("%d-%b-%Y")
+
+    day, mon, year = match.groups()
+    try:
+        expiry = datetime.datetime.strptime(f"{day}-{mon}-{year}", "%d-%b-%Y")
+        return expiry.strftime("%d-%b-%Y")
+    except Exception as e:
+        print(f"[DEBUG] Invalid expiry format: {e}")
+        return datetime.datetime.now().strftime("%d-%b-%Y")
+
+
 async def find_adaptive_ic_from_csv(csv_path):
     try:
+        expiry = extract_expiry_from_filename(csv_path)
+
         df_raw = pd.read_csv(csv_path, skiprows=1, thousands=",")
         df_raw.columns = df_raw.columns.str.strip()
 
@@ -120,7 +140,8 @@ async def find_adaptive_ic_from_csv(csv_path):
                     "buy_pe": int(pe_buy_strike),
                     "sell_ce": int(ce_sell),
                     "buy_ce": int(ce_buy_strike),
-                    "net_credit": round(net_credit, 2)
+                    "net_credit": round(net_credit, 2),
+                    "expiry": expiry
                 })
 
         summary = f"""\n🧪 *IC Scan Summary*\n• Total combos scanned: {total_checked}\n• Max credit observed: ₹{round(max_credit_seen, 2)}\n• Valid ICs found: {len(ic_list)}\n• Skipped examples:\n{chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}\n"""
