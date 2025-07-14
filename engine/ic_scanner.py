@@ -55,7 +55,7 @@ async def find_adaptive_ic_from_csv(csv_path):
                 ce_sell = df.iloc[j]["strike"]
                 pe_sell = df.iloc[i]["strike"]
 
-                if pe_sell > spot or ce_sell < spot:
+                if float(pe_sell) > spot or float(ce_sell) < spot:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → One leg ITM")
                     continue
 
