@@ -12,27 +12,27 @@ def get_banknifty_spot():
         print(f"[DEBUG] Columns: {df.columns.tolist()}")
         print(f"[DEBUG] Tail:\n{df.tail()}")
 
+        # Flatten MultiIndex columns
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = [col[1] if col[1] else col[0] for col in df.columns]
+
+        print(f"[DEBUG] Flattened Columns: {df.columns.tolist()}")
+
         if df.empty or "Close" not in df.columns:
             raise ValueError("❌ Spot data missing or corrupted")
 
-        # Drop NaNs and reset index to avoid ambiguity
         close_prices = df["Close"].dropna().reset_index(drop=True)
 
         if close_prices.empty:
             raise ValueError("❌ No valid closing prices")
 
         spot = close_prices.iloc[-1]
-        if isinstance(spot, pd.Series):
-            raise ValueError("❌ Ambiguous Series in spot fetch")
-
         print(f"[DEBUG] Spot extracted: {spot}")
         return round(float(spot), 2)
 
     except Exception as e:
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
-
-
 
 async def find_adaptive_ic_from_csv(csv_path):
     try:
