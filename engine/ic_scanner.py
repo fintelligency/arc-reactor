@@ -15,8 +15,8 @@ async def find_adaptive_ic_from_csv(csv_path):
 
        strike_idx = list(df_raw.columns).index(strike_col)
 
-       ce_ltp_col = df_raw.columns[strike_idx - 1]
-       pe_ltp_col = df_raw.columns[strike_idx + 1]
+       ce_ltp_col = df_raw.columns[strike_idx - 6]
+       pe_ltp_col = df_raw.columns[strike_idx + 6]
 
        df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
        df.columns = ["strike", "ce_ltp", "pe_ltp"]
