@@ -4,6 +4,7 @@ import yfinance as yf
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
+
 def get_banknifty_spot():
     try:
         df = yf.download("^NSEBANK", period="1d", interval="1m")
@@ -14,9 +15,10 @@ def get_banknifty_spot():
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
 
+
 async def find_adaptive_ic_from_csv(csv_path):
     try:
-        # 📥 Read CSV: skip title row, load clean header
+        # 📥 Read CSV: skip title row, clean headers
         df_raw = pd.read_csv(csv_path, skiprows=1, thousands=",")
         df_raw.columns = df_raw.columns.str.strip()
 
@@ -27,24 +29,17 @@ async def find_adaptive_ic_from_csv(csv_path):
 
         strike_idx = list(df_raw.columns).index(strike_col)
 
-        # 🛡 Validate CE/PE LTP offset around STRIKE
         if strike_idx < 6 or strike_idx + 6 >= len(df_raw.columns):
             raise ValueError("❌ Column offset for LTPs is out of range.")
 
-        ce_ltp_col = df_raw.columns[strike_idx - 6]
-        pe_ltp_col = df_raw.columns[strike_idx + 6]
+        print(f"[DEBUG] STRIKE column found: {strike_col} at index {strike_idx}")
+        print(f"[DEBUG] Using CE_LTP @ {strike_idx - 6}, PE_LTP @ {strike_idx + 6}")
 
-        print(f"[DEBUG] STRIKE: {strike_col}, CE_LTP: {ce_ltp_col}, PE_LTP: {pe_ltp_col}")
-        print(f"[DEBUG] Types → strike_col: {type(strike_col)}, ce_ltp_col: {type(ce_ltp_col)}, pe_ltp_col: {type(pe_ltp_col)}")
-
-        if strike_col is None or ce_ltp_col is None or pe_ltp_col is None:
-            raise ValueError(f"❌ Required columns not found:\nStrike: {strike_col}\nCE LTP: {ce_ltp_col}\nPE LTP: {pe_ltp_col}")
-
-        # ✅ Explicit mapping to avoid duplicate 'LTP' ambiguity
+        # ✅ Build dataframe using positional indexing
         df = pd.DataFrame({
-            "strike": df_raw[strike_col],
-            "ce_ltp": df_raw[ce_ltp_col],
-            "pe_ltp": df_raw[pe_ltp_col]
+            "strike": df_raw.iloc[:, strike_idx],
+            "ce_ltp": df_raw.iloc[:, strike_idx - 6],
+            "pe_ltp": df_raw.iloc[:, strike_idx + 6],
         })
 
         df.dropna(inplace=True)
@@ -126,6 +121,7 @@ async def find_adaptive_ic_from_csv(csv_path):
 
     except Exception as e:
         raise ValueError(f"❌ Error parsing CSV: {e}")
+
 
 async def log_and_alert_ic_candidates(ic_list, expiry):
     rows = []
