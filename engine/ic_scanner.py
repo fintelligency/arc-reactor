@@ -52,9 +52,13 @@ async def find_adaptive_ic_from_csv(csv_path):
         for i in range(len(df)):
             for j in range(i + 4, len(df)):  # Ensure 800pt diff
                 total_checked += 1
-                ce_sell = df.iloc[j]["strike"]
-                pe_sell = df.iloc[i]["strike"]
+                pe_row = df.iloc[i]
+                ce_row = df.iloc[j]
 
+                pe_sell = float(pe_row["strike"])
+                ce_sell = float(ce_row["strike"])
+
+                # Only select OTM strikes
                 if float(pe_sell) > spot or float(ce_sell) < spot:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → One leg ITM")
                     continue
