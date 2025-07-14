@@ -4,26 +4,30 @@ import yfinance as yf
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
-# We’re temporarily disabling the spot logic
-# def get_banknifty_spot():
-#     try:
-#         df = yf.download("^NSEBANK", period="1d", interval="1m", auto_adjust=False)
-#         if df.empty:
-#             raise ValueError("Empty spot data")
-#         if "Close" not in df.columns:
-#             raise ValueError("Missing 'Close' column in spot data")
-#         close_series = df["Close"].dropna()
-#         if close_series.empty:
-#             raise ValueError("Close series is empty after dropna()")
-#         spot_val = close_series.iloc[-1]
-#         if pd.isna(spot_val):
-#             raise ValueError("Spot value is NaN")
-#         spot = float(spot_val)
-#         print(f"[DEBUG] BANKNIFTY Spot: {spot}")
-#         return round(spot, 2)
-#     except Exception as e:
-#         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
-#         return None
+def get_banknifty_spot():
+    try:
+        df = yf.download("^NSEBANK", period="1d", interval="1m", auto_adjust=False)
+        if df.empty:
+            raise ValueError("Empty spot data")
+
+        close_series = df['Close'].dropna()
+
+        if close_series.empty:
+            raise ValueError("No valid close values found")
+
+        # Take the last valid scalar value safely
+        spot = close_series.iloc[-1]
+        if pd.isna(spot):
+            raise ValueError("Last close value is NaN")
+
+        spot = float(spot)
+        print(f"[DEBUG] BANKNIFTY Spot Price: {spot}")
+        return round(spot, 2)
+
+    except Exception as e:
+        print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
+        return None
+
 
 async def find_adaptive_ic_from_csv(csv_path):
     try:
@@ -57,10 +61,9 @@ async def find_adaptive_ic_from_csv(csv_path):
         df.sort_values("strike", inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        # 📈 Temporarily bypassing spot logic
-        # spot = get_banknifty_spot()
-        # if spot is None:
-        #     raise ValueError("Could not fetch BANKNIFTY spot price")
+        spot = get_banknifty_spot()
+        if spot is None:
+            raise ValueError("Could not fetch BANKNIFTY spot price")
 
         ic_list = []
         max_credit_seen = 0
@@ -73,10 +76,9 @@ async def find_adaptive_ic_from_csv(csv_path):
                 ce_sell = float(df.iloc[j]["strike"])
                 pe_sell = float(df.iloc[i]["strike"])
 
-                # Temporarily ignore spot-related filtering:
-                # if pe_sell > spot or ce_sell < spot:
-                #     skip_reasons.append(f"{pe_sell}/{ce_sell} → One leg ITM")
-                #     continue
+                if pe_sell > spot or ce_sell < spot:
+                    skip_reasons.append(f"{pe_sell}/{ce_sell} → One leg ITM")
+                    continue
 
                 ce_ltp = float(df.iloc[j]["ce_ltp"])
                 pe_ltp = float(df.iloc[i]["pe_ltp"])
@@ -86,10 +88,6 @@ async def find_adaptive_ic_from_csv(csv_path):
 
                 ce_buy_row = df[df["strike"] == ce_buy_strike]
                 pe_buy_row = df[df["strike"] == pe_buy_strike]
-
-                print(f"[DEBUG] Checking hedges: CE {ce_buy_strike}, PE {pe_buy_strike}")
-                print(f"[DEBUG] ce_buy_row:\n{ce_buy_row}")
-                print(f"[DEBUG] pe_buy_row:\n{pe_buy_row}")
 
                 if ce_buy_row.empty or pe_buy_row.empty:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Hedge strikes missing")
@@ -102,9 +100,6 @@ async def find_adaptive_ic_from_csv(csv_path):
                 try:
                     ce_buy_series = ce_buy_row["ce_ltp"]
                     pe_buy_series = pe_buy_row["pe_ltp"]
-
-                    print(f"[DEBUG] ce_buy_series = {ce_buy_series}")
-                    print(f"[DEBUG] pe_buy_series = {pe_buy_series}")
 
                     if ce_buy_series.shape[0] != 1 or pe_buy_series.shape[0] != 1:
                         skip_reasons.append(f"{pe_sell}/{ce_sell} → Ambiguous hedge row shape")
