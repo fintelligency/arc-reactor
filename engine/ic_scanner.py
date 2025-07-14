@@ -16,22 +16,30 @@ def get_banknifty_spot():
 
 async def find_adaptive_ic_from_csv(csv_path):
     try:
-        # 📥 Read CSV - Skip garbage title row, read clean header
+        # 📥 Read CSV: skip title row, load clean header
         df_raw = pd.read_csv(csv_path, skiprows=1, thousands=",")
+        df_raw.columns = df_raw.columns.str.strip()  # Clean spaces
 
-        # 🎯 Identify key columns dynamically
+        # 🔍 Detect STRIKE column
         strike_col = next((col for col in df_raw.columns if "strike" in col.lower()), None)
-        ce_ltp_col = next((col for col in df_raw.columns if "call ltp" in col.lower()), None)
-        pe_ltp_col = next((col for col in df_raw.columns if "put ltp" in col.lower()), None)
+        if not strike_col:
+            raise ValueError("❌ Strike column not found.")
 
-        if not strike_col or not ce_ltp_col or not pe_ltp_col:
-            raise ValueError(f"❌ Required columns not found:\nStrike: {strike_col}\nCE LTP: {ce_ltp_col}\nPE LTP: {pe_ltp_col}")
+        strike_idx = list(df_raw.columns).index(strike_col)
 
-        # 🧼 Extract only necessary columns
+        # 🛡 Validate CE/PE LTP offset around STRIKE
+        if strike_idx < 6 or strike_idx + 6 >= len(df_raw.columns):
+            raise ValueError("❌ Column offset for LTPs is out of range.")
+
+        ce_ltp_col = df_raw.columns[strike_idx - 6]  # CALL LTP (left)
+        pe_ltp_col = df_raw.columns[strike_idx + 6]  # PUT LTP (right)
+
+        print(f"[DEBUG] STRIKE: {strike_col}, CE_LTP: {ce_ltp_col}, PE_LTP: {pe_ltp_col}")
+
+        # 🧼 Clean dataframe
         df = df_raw[[strike_col, ce_ltp_col, pe_ltp_col]].copy()
         df.columns = ["strike", "ce_ltp", "pe_ltp"]
 
-        # 🧹 Clean + Convert
         df.dropna(inplace=True)
         df["strike"] = pd.to_numeric(df["strike"].astype(str).str.replace(",", ""), errors="coerce")
         df["ce_ltp"] = pd.to_numeric(df["ce_ltp"].astype(str).str.replace(",", ""), errors="coerce")
@@ -40,7 +48,7 @@ async def find_adaptive_ic_from_csv(csv_path):
         df.sort_values("strike", inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-        # 🚀 Fetch spot price
+        # 📈 Get spot price
         spot = get_banknifty_spot()
         if spot is None:
             raise ValueError("Could not fetch BANKNIFTY spot price")
@@ -51,12 +59,11 @@ async def find_adaptive_ic_from_csv(csv_path):
         skip_reasons = []
 
         for i in range(len(df)):
-            for j in range(i + 4, len(df)):  # Ensure ~800pt diff
+            for j in range(i + 4, len(df)):  # Ensure ~800pt difference
                 total_checked += 1
                 ce_sell = float(df.iloc[j]["strike"])
                 pe_sell = float(df.iloc[i]["strike"])
 
-                # ⚠️ Reject ITM
                 if pe_sell > spot or ce_sell < spot:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → One leg ITM")
                     continue
@@ -67,7 +74,6 @@ async def find_adaptive_ic_from_csv(csv_path):
                 ce_buy_strike = ce_sell + 800
                 pe_buy_strike = pe_sell - 800
 
-                # 🔍 Find hedge legs
                 ce_buy_row = df[df["strike"] == ce_buy_strike]
                 pe_buy_row = df[df["strike"] == pe_buy_strike]
 
@@ -91,7 +97,6 @@ async def find_adaptive_ic_from_csv(csv_path):
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Net credit ≤ 0")
                     continue
 
-                # 📝 Log valid IC
                 max_credit_seen = max(max_credit_seen, net_credit)
                 ic_list.append({
                     "sell_pe": int(pe_sell),
@@ -101,7 +106,7 @@ async def find_adaptive_ic_from_csv(csv_path):
                     "net_credit": round(net_credit, 2)
                 })
 
-        # 📊 Summary for Telegram
+        # 📊 Summary alert
         summary = f"""🧪 *IC Scan Summary*
 • Total combos scanned: {total_checked}
 • Max credit observed: ₹{round(max_credit_seen, 2)}
@@ -134,7 +139,6 @@ async def log_and_alert_ic_candidates(ic_list, expiry):
 
     append_to_gsheet(rows, sheet_name="ic_trades")
 
-    # 🔔 Telegram Alert
     msg = "\n\n".join([
         f"*IC #{i+1}*\nPE: {ic['sell_pe']}/{ic['buy_pe']}\nCE: {ic['sell_ce']}/{ic['buy_ce']}\n💰 Credit: ₹{ic['net_credit']}"
         for i, ic in enumerate(ic_list)
