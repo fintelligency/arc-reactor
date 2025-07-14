@@ -51,15 +51,16 @@ async def find_adaptive_ic_from_csv(csv_path):
         for i in range(len(df)):
             for j in range(i + 4, len(df)):  # Ensure 800pt diff
                 total_checked += 1
-                ce_sell = float(df.iloc[j]["strike"])
-                pe_sell = float(df.iloc[i]["strike"])
+                ce_sell = df.iloc[j]["strike"].item()
+                pe_sell = df.iloc[i]["strike"].item()
 
+                # Only select OTM strikes
                 if pe_sell > spot or ce_sell < spot:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → One leg ITM")
                     continue
 
-                ce_ltp = float(df.iloc[j]["ce_ltp"])
-                pe_ltp = float(df.iloc[i]["pe_ltp"])
+                ce_ltp = df.iloc[j]["ce_ltp"].item()
+                pe_ltp = df.iloc[i]["pe_ltp"].item()
 
                 ce_buy_strike = ce_sell + 800
                 pe_buy_strike = pe_sell - 800
@@ -71,8 +72,8 @@ async def find_adaptive_ic_from_csv(csv_path):
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Hedge strikes missing")
                     continue
 
-                ce_buy = float(ce_buy_row["ce_ltp"].values[0])
-                pe_buy = float(pe_buy_row["pe_ltp"].values[0])
+                ce_buy = ce_buy_row["ce_ltp"].iloc[0].item()
+                pe_buy = pe_buy_row["pe_ltp"].iloc[0].item()
                 net_credit = ce_ltp + pe_ltp - ce_buy - pe_buy
 
                 if net_credit <= 0:
