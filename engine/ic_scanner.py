@@ -68,8 +68,17 @@ async def find_adaptive_ic_from_csv(csv_path):
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Hedge strikes missing")
                     continue
 
-                ce_buy = float(ce_buy_row["ce_ltp"].iloc[0])
-                pe_buy = float(pe_buy_row["pe_ltp"].iloc[0])
+                if len(ce_buy_row) != 1 or len(pe_buy_row) != 1:
+                    skip_reasons.append(f"{pe_sell}/{ce_sell} → Duplicate strike data")
+                    continue
+
+                try:
+                    ce_buy = float(ce_buy_row["ce_ltp"].values[0])
+                    pe_buy = float(pe_buy_row["pe_ltp"].values[0])
+                except (IndexError, ValueError):
+                    skip_reasons.append(f"{pe_sell}/{ce_sell} → Error extracting hedge LTP")
+                    continue
+
                 net_credit = ce_ltp + pe_ltp - ce_buy - pe_buy
 
                 if net_credit <= 0:
