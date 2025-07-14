@@ -7,7 +7,7 @@ from utils.alerts import send_telegram_alert
 
 def get_banknifty_spot():
     try:
-        df = yf.download("^NSEBANK", period="1d", interval="1m")
+        df = yf.download("^NSEBANK", period="1d", interval="1m", auto_adjust=False)
 
         if df.empty:
             raise ValueError("Empty spot data")
@@ -15,17 +15,18 @@ def get_banknifty_spot():
         if "Close" not in df.columns:
             raise ValueError("Missing 'Close' column in spot data")
 
-        close_series = df["Close"].dropna()
-        if close_series.empty:
-            raise ValueError("Close series is empty after dropna()")
+        # Drop any NaN in Close
+        close_prices = df["Close"].dropna()
+        if close_prices.empty:
+            raise ValueError("No valid Close prices found")
 
-        spot_val = close_series.iloc[-1]
+        # ✅ Get last close value safely
+        last_close = close_prices.iloc[-1]
+        if pd.isna(last_close):
+            raise ValueError("Last close value is NaN")
 
-        if pd.isna(spot_val):
-            raise ValueError("Spot value is NaN")
-
-        spot = float(spot_val)
-        print(f"[DEBUG] Spot price: {spot}")
+        spot = float(last_close)
+        print(f"[DEBUG] BANKNIFTY Spot: {spot}")
         return round(spot, 2)
 
     except Exception as e:
