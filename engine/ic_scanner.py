@@ -46,7 +46,8 @@ async def find_adaptive_ic_from_csv(csv_path):
         skip_reasons = []
 
         for i in range(len(df)):
-            for j in range(i + 4, len(df)):  # Ensure 800pt diff
+            for j in range(i + 4, len(df)):  # Ensure 800pt difference
+
                 total_checked += 1
                 ce_sell = float(df.iloc[j]["strike"])
                 pe_sell = float(df.iloc[i]["strike"])
@@ -60,6 +61,9 @@ async def find_adaptive_ic_from_csv(csv_path):
 
                 ce_buy_strike = ce_sell + 800
                 pe_buy_strike = pe_sell - 800
+
+                print(
+                    f"Spot: {spot}, Checking: PE {pe_sell}, CE {ce_sell}, Buy CE {ce_buy_strike}, Buy PE {pe_buy_strike}")
 
                 ce_buy_row = df[df["strike"] == ce_buy_strike]
                 pe_buy_row = df[df["strike"] == pe_buy_strike]
@@ -75,8 +79,8 @@ async def find_adaptive_ic_from_csv(csv_path):
                 try:
                     ce_buy = float(ce_buy_row["ce_ltp"].values[0])
                     pe_buy = float(pe_buy_row["pe_ltp"].values[0])
-                except (IndexError, ValueError):
-                    skip_reasons.append(f"{pe_sell}/{ce_sell} → Error extracting hedge LTP")
+                except (IndexError, ValueError, TypeError) as e:
+                    skip_reasons.append(f"{pe_sell}/{ce_sell} → Error extracting hedge LTP: {str(e)}")
                     continue
 
                 net_credit = ce_ltp + pe_ltp - ce_buy - pe_buy
