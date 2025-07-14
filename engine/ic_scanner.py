@@ -88,9 +88,12 @@ async def find_adaptive_ic_from_csv(csv_path):
                     continue
 
                 try:
-                    ce_buy = float(ce_buy_row["ce_ltp"].values[0])
-                    pe_buy = float(pe_buy_row["pe_ltp"].values[0])
-                except (IndexError, ValueError, TypeError) as e:
+                    # 🛠 Sanity debug
+                    print(f"[DEBUG] Hedging LTPs: CE row = {ce_buy_row[['strike', 'ce_ltp']]}, PE row = {pe_buy_row[['strike', 'pe_ltp']]}")
+
+                    ce_buy = float(ce_buy_row.iloc[0]["ce_ltp"])
+                    pe_buy = float(pe_buy_row.iloc[0]["pe_ltp"])
+                except Exception as e:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Error reading hedge LTP: {str(e)}")
                     continue
 
