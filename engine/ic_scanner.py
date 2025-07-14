@@ -6,39 +6,36 @@ from utils.alerts import send_telegram_alert
 
 def get_banknifty_spot():
     try:
-        df = yf.download("^NSEBANK", period="1d", interval="1m", auto_adjust=False)
-
+        df = yf.download("^NSEBANK", period="1d", interval="1m")
         print(f"[DEBUG] Raw YF df shape: {df.shape}")
-        print(f"[DEBUG] Columns: {df.columns.tolist()}")
-        print(f"[DEBUG] Tail:\n{df.tail()}")
 
-        # ✅ Flatten columns to extract field names like 'Close', 'Open'
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [col[0] for col in df.columns]
+        if df.empty:
+            raise ValueError("❌ Empty DataFrame returned from yfinance")
 
+        df.columns = df.columns.str.strip()
         print(f"[DEBUG] Flattened Columns: {df.columns.tolist()}")
 
-        if df.empty or "Close" not in df.columns:
-            raise ValueError("❌ Spot data missing or corrupted")
+        if "Close" not in df.columns:
+            raise ValueError("❌ 'Close' column not found in YF data")
 
-        spot = df["Close"].dropna().iloc[-1]
+        spot = df["Close"].iloc[-1]
         print(f"[DEBUG] Spot extracted: {spot}")
-        return round(float(spot), 2)
+        return round(spot, 2)
 
     except Exception as e:
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
 
+
 async def find_adaptive_ic_from_csv(csv_path):
     try:
-        # 📥 Read CSV: skip title row, clean headers
         df_raw = pd.read_csv(csv_path, skiprows=1, thousands=",")
         df_raw.columns = df_raw.columns.str.strip()
 
-        # 🔍 Detect STRIKE column
         strike_col = next((col for col in df_raw.columns if "strike" in col.lower()), None)
         if not strike_col:
             raise ValueError("❌ Strike column not found.")
+
         strike_idx = list(df_raw.columns).index(strike_col)
         if strike_idx < 6 or strike_idx + 6 >= len(df_raw.columns):
             raise ValueError("❌ Column offset for LTPs is out of range.")
@@ -46,7 +43,6 @@ async def find_adaptive_ic_from_csv(csv_path):
         print(f"[DEBUG] STRIKE column found: {strike_col} at index {strike_idx}")
         print(f"[DEBUG] Using CE_LTP @ {strike_idx - 6}, PE_LTP @ {strike_idx + 6}")
 
-        # ✅ Build dataframe using positional indexing (avoiding duplicate 'LTP' issues)
         df = pd.DataFrame({
             "strike": df_raw.iloc[:, strike_idx],
             "ce_ltp": df_raw.iloc[:, strike_idx - 6],
@@ -63,7 +59,7 @@ async def find_adaptive_ic_from_csv(csv_path):
 
         spot = get_banknifty_spot()
         if spot is None:
-            raise ValueError("Could not fetch BANKNIFTY spot price")
+            raise ValueError("❌ Could not fetch BANKNIFTY spot price")
 
         ic_list = []
         max_credit_seen = 0
@@ -71,7 +67,7 @@ async def find_adaptive_ic_from_csv(csv_path):
         skip_reasons = []
 
         for i in range(len(df)):
-            for j in range(i + 4, len(df)):  # Ensure ~800pt difference
+            for j in range(i + 4, len(df)):
                 total_checked += 1
                 ce_sell = float(df.iloc[j]["strike"])
                 pe_sell = float(df.iloc[i]["strike"])
@@ -93,20 +89,9 @@ async def find_adaptive_ic_from_csv(csv_path):
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Hedge strikes missing")
                     continue
 
-                if len(ce_buy_row) != 1 or len(pe_buy_row) != 1:
-                    skip_reasons.append(f"{pe_sell}/{ce_sell} → Duplicate hedge strike rows")
-                    continue
-
                 try:
-                    ce_buy_series = ce_buy_row["ce_ltp"]
-                    pe_buy_series = pe_buy_row["pe_ltp"]
-
-                    if ce_buy_series.shape[0] != 1 or pe_buy_series.shape[0] != 1:
-                        skip_reasons.append(f"{pe_sell}/{ce_sell} → Ambiguous hedge row shape")
-                        continue
-
-                    ce_buy = float(ce_buy_series.iloc[0])
-                    pe_buy = float(pe_buy_series.iloc[0])
+                    ce_buy = float(ce_buy_row["ce_ltp"].iloc[0])
+                    pe_buy = float(pe_buy_row["pe_ltp"].iloc[0])
                 except Exception as e:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Error reading hedge LTP: {str(e)}")
                     continue
@@ -119,19 +104,13 @@ async def find_adaptive_ic_from_csv(csv_path):
                 max_credit_seen = max(max_credit_seen, net_credit)
                 ic_list.append({
                     "sell_pe": int(pe_sell),
-                    "buy_pe": int(ce_sell + 800),  # note: ce_sell + 800 equals ce_buy strike
+                    "buy_pe": int(pe_buy_strike),
                     "sell_ce": int(ce_sell),
                     "buy_ce": int(ce_buy_strike),
                     "net_credit": round(net_credit, 2)
                 })
 
-        summary = f"""🧪 *IC Scan Summary*
-• Total combos scanned: {total_checked}
-• Max credit observed: ₹{round(max_credit_seen, 2)}
-• Valid ICs found: {len(ic_list)}
-• Skipped examples:
-{chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}
-"""
+        summary = f"""\n🧪 *IC Scan Summary*\n• Total combos scanned: {total_checked}\n• Max credit observed: ₹{round(max_credit_seen, 2)}\n• Valid ICs found: {len(ic_list)}\n• Skipped examples:\n{chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}\n"""
         await send_telegram_alert(summary)
         return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
 
