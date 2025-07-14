@@ -139,24 +139,28 @@ async def find_adaptive_ic_from_csv(csv_path):
                     "buy_pe": int(pe_buy_strike),
                     "sell_ce": int(ce_sell),
                     "buy_ce": int(ce_buy_strike),
-                    "net_credit": round(net_credit, 2)
+                    "net_credit": round(net_credit, 2),
+                    "expiry": expiry  # embed expiry directly inside
                 })
 
         summary = f"""\n🧪 *IC Scan Summary*\n• Total combos scanned: {total_checked}\n• Max credit observed: ₹{round(max_credit_seen, 2)}\n• Valid ICs found: {len(ic_list)}\n• Skipped examples:\n{chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}\n"""
         await send_telegram_alert(summary)
 
-        return sorted(ic_list, key=lambda x: -x["net_credit"])[:3], expiry
+        return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
 
     except Exception as e:
         raise ValueError(f"❌ Error parsing CSV: {e}")
 
-
 async def log_and_alert_ic_candidates(ic_list):
+    if not ic_list:
+        print("⚠️ No IC candidates to log.")
+        return
+
     rows = []
     for ic in ic_list:
         row = {
             "Symbol": "BANKNIFTY",
-            "Expiry": ic['expiry'],  # Use from dict
+            "Expiry": ic["expiry"],
             "Sell PE": ic['sell_pe'],
             "Buy PE": ic['buy_pe'],
             "Sell CE": ic['sell_ce'],
@@ -174,5 +178,5 @@ async def log_and_alert_ic_candidates(ic_list):
         f"*IC #{i+1}*\nPE: {ic['sell_pe']}/{ic['buy_pe']}\nCE: {ic['sell_ce']}/{ic['buy_ce']}\n💰 Credit: ₹{ic['net_credit']}"
         for i, ic in enumerate(ic_list)
     ])
-    expiry_str = ic_list[0]["expiry"] if ic_list else "N/A"
+    expiry_str = ic_list[0]["expiry"]
     await send_telegram_alert(f"🟢 *Top Adaptive IC Candidates ({expiry_str})*\n\n{msg}")
