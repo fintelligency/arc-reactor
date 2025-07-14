@@ -82,6 +82,14 @@ async def find_adaptive_ic_from_csv(csv_path):
                 ce_buy_strike = ce_sell + 800
                 pe_buy_strike = pe_sell - 800
 
+                if pe_buy_strike >= pe_sell or ce_buy_strike <= ce_sell:
+                    skip_reasons.append(f"{pe_sell}/{ce_sell} → Hedge not OTM")
+                    continue
+
+                if pe_buy_strike == ce_buy_strike:
+                    skip_reasons.append(f"{pe_sell}/{ce_sell} → Buy legs overlap")
+                    continue
+
                 ce_buy_row = df[df["strike"] == ce_buy_strike]
                 pe_buy_row = df[df["strike"] == pe_buy_strike]
 
@@ -112,7 +120,7 @@ async def find_adaptive_ic_from_csv(csv_path):
 
         summary = f"""\n🧪 *IC Scan Summary*\n• Total combos scanned: {total_checked}\n• Max credit observed: ₹{round(max_credit_seen, 2)}\n• Valid ICs found: {len(ic_list)}\n• Skipped examples:\n{chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}\n"""
         await send_telegram_alert(summary)
-        return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
+        return sorted(ic_list, key=lambda x: -x["net_credit"])[0:3]
 
     except Exception as e:
         raise ValueError(f"❌ Error parsing CSV: {e}")
