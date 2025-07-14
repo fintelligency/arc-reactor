@@ -5,16 +5,14 @@ import re
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
+
 def get_banknifty_spot():
     try:
         df = yf.download("^NSEBANK", period="1d", interval="1m", auto_adjust=False)
-
         print(f"[DEBUG] Raw YF df shape: {df.shape}")
         print(f"[DEBUG] Columns: {df.columns}")
 
-        # If MultiIndex (e.g., from yfinance with multiple tickers)
         if isinstance(df.columns, pd.MultiIndex):
-            # Try to extract 'Close' column for '^NSEBANK'
             if ('Close', '^NSEBANK') in df.columns:
                 close_series = df[('Close', '^NSEBANK')]
             else:
@@ -32,6 +30,7 @@ def get_banknifty_spot():
     except Exception as e:
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
+
 
 def extract_expiry_from_filename(filename: str) -> str:
     import os
@@ -140,13 +139,13 @@ async def find_adaptive_ic_from_csv(csv_path):
                     "buy_pe": int(pe_buy_strike),
                     "sell_ce": int(ce_sell),
                     "buy_ce": int(ce_buy_strike),
-                    "net_credit": round(net_credit, 2),
-                    "expiry": expiry
+                    "net_credit": round(net_credit, 2)
                 })
 
         summary = f"""\n🧪 *IC Scan Summary*\n• Total combos scanned: {total_checked}\n• Max credit observed: ₹{round(max_credit_seen, 2)}\n• Valid ICs found: {len(ic_list)}\n• Skipped examples:\n{chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}\n"""
         await send_telegram_alert(summary)
-        return sorted(ic_list, key=lambda x: -x["net_credit"])[0:3]
+
+        return sorted(ic_list, key=lambda x: -x["net_credit"])[:3], expiry
 
     except Exception as e:
         raise ValueError(f"❌ Error parsing CSV: {e}")
