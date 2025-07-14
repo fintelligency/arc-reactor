@@ -4,7 +4,6 @@ import yfinance as yf
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
-
 def get_banknifty_spot():
     try:
         df = yf.download("^NSEBANK", period="1d", interval="1m")
@@ -15,7 +14,6 @@ def get_banknifty_spot():
         print(f"[ICScanner] ⚠️ Failed to fetch spot price: {e}")
         return None
 
-
 async def find_adaptive_ic_from_csv(csv_path):
     try:
         spot = get_banknifty_spot()
@@ -23,7 +21,6 @@ async def find_adaptive_ic_from_csv(csv_path):
             raise ValueError("Could not fetch BANKNIFTY spot price")
 
         df_raw = pd.read_csv(csv_path, skiprows=1, thousands=",")
-
         strike_col = next((col for col in df_raw.columns if "strike" in col.lower()), None)
         if not strike_col:
             raise ValueError("❌ Strike column not found in uploaded file.")
@@ -51,16 +48,15 @@ async def find_adaptive_ic_from_csv(csv_path):
         for i in range(len(df)):
             for j in range(i + 4, len(df)):  # Ensure 800pt diff
                 total_checked += 1
-                ce_sell = df.iloc[j]["strike"].item()
-                pe_sell = df.iloc[i]["strike"].item()
+                ce_sell = float(df.iloc[j]["strike"])
+                pe_sell = float(df.iloc[i]["strike"])
 
-                # Only select OTM strikes
                 if pe_sell > spot or ce_sell < spot:
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → One leg ITM")
                     continue
 
-                ce_ltp = df.iloc[j]["ce_ltp"].item()
-                pe_ltp = df.iloc[i]["pe_ltp"].item()
+                ce_ltp = float(df.iloc[j]["ce_ltp"])
+                pe_ltp = float(df.iloc[i]["pe_ltp"])
 
                 ce_buy_strike = ce_sell + 800
                 pe_buy_strike = pe_sell - 800
@@ -72,8 +68,8 @@ async def find_adaptive_ic_from_csv(csv_path):
                     skip_reasons.append(f"{pe_sell}/{ce_sell} → Hedge strikes missing")
                     continue
 
-                ce_buy = ce_buy_row["ce_ltp"].iloc[0].item()
-                pe_buy = pe_buy_row["pe_ltp"].iloc[0].item()
+                ce_buy = float(ce_buy_row["ce_ltp"].iloc[0])
+                pe_buy = float(pe_buy_row["pe_ltp"].iloc[0])
                 net_credit = ce_ltp + pe_ltp - ce_buy - pe_buy
 
                 if net_credit <= 0:
@@ -97,13 +93,11 @@ async def find_adaptive_ic_from_csv(csv_path):
 • Skipped examples: 
 {chr(10).join(skip_reasons[:5]) if skip_reasons else 'None'}
 """
-
         await send_telegram_alert(summary)
         return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
 
     except Exception as e:
         raise ValueError(f"❌ Error parsing CSV: {e}")
-
 
 async def log_and_alert_ic_candidates(ic_list, expiry):
     rows = []
