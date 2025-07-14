@@ -12,21 +12,16 @@ def get_banknifty_spot():
         print(f"[DEBUG] Columns: {df.columns.tolist()}")
         print(f"[DEBUG] Tail:\n{df.tail()}")
 
-        # Flatten MultiIndex columns
+        # ✅ Flatten columns to extract field names like 'Close', 'Open'
         if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [col[1] if col[1] else col[0] for col in df.columns]
+            df.columns = [col[0] for col in df.columns]
 
         print(f"[DEBUG] Flattened Columns: {df.columns.tolist()}")
 
         if df.empty or "Close" not in df.columns:
             raise ValueError("❌ Spot data missing or corrupted")
 
-        close_prices = df["Close"].dropna().reset_index(drop=True)
-
-        if close_prices.empty:
-            raise ValueError("❌ No valid closing prices")
-
-        spot = close_prices.iloc[-1]
+        spot = df["Close"].dropna().iloc[-1]
         print(f"[DEBUG] Spot extracted: {spot}")
         return round(float(spot), 2)
 
