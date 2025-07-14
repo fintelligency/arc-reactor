@@ -66,7 +66,7 @@ async def upload_ic_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expiry_guess = datetime.datetime.now().strftime("%d-%b-%Y")
 
             if ic_list:
-                await log_and_alert_ic_candidates(ic_list, expiry_guess)
+                await log_and_alert_ic_candidates(ic_list)
                 await update.message.reply_text("✅ IC candidates scanned and logged.")
             else:
                 await update.message.reply_text("⚠️ No valid ICs found.")
