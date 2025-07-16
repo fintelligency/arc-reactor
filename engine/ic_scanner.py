@@ -99,16 +99,30 @@ async def find_adaptive_ic_from_csv(csv_path, locked_mode=False):
 
             df.set_index("strike", inplace=True)
 
+            missing = []
+
             try:
                 pe_sell_ltp = df.at[pe_sell, "pe_ltp"]
-                pe_buy_ltp = df.at[pe_buy, "pe_ltp"]
-                ce_sell_ltp = df.at[ce_sell, "ce_ltp"]
-                ce_buy_ltp = df.at[ce_buy, "ce_ltp"]
+                if pe_sell_ltp == 0 or pd.isna(pe_sell_ltp):
+                    missing.append(f"{pe_sell} PE Sell")
 
-                if any(x == 0 for x in [pe_sell_ltp, pe_buy_ltp, ce_sell_ltp, ce_buy_ltp]):
-                    raise ValueError("❌ One of the strike LTPs is illiquid (0).")
-            except:
-                raise ValueError("❌ One of the required strikes is missing or illiquid.")
+                pe_buy_ltp = df.at[pe_buy, "pe_ltp"]
+                if pe_buy_ltp == 0 or pd.isna(pe_buy_ltp):
+                    missing.append(f"{pe_buy} PE Buy")
+
+                ce_sell_ltp = df.at[ce_sell, "ce_ltp"]
+                if ce_sell_ltp == 0 or pd.isna(ce_sell_ltp):
+                    missing.append(f"{ce_sell} CE Sell")
+
+                ce_buy_ltp = df.at[ce_buy, "ce_ltp"]
+                if ce_buy_ltp == 0 or pd.isna(ce_buy_ltp):
+                    missing.append(f"{ce_buy} CE Buy")
+
+            except KeyError as e:
+                raise ValueError(f"❌ Locked IC failed: required strike {e.args[0]} not found in CSV.")
+
+            if missing:
+                raise ValueError(f"❌ Locked IC failed: illiquid/missing strikes: {', '.join(missing)}")
 
             net_credit = round(pe_sell_ltp + ce_sell_ltp - pe_buy_ltp - ce_buy_ltp, 2)
 
