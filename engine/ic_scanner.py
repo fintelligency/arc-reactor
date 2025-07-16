@@ -104,8 +104,11 @@ async def find_adaptive_ic_from_csv(csv_path, locked_mode=False):
                 pe_buy_ltp = df.at[pe_buy, "pe_ltp"]
                 ce_sell_ltp = df.at[ce_sell, "ce_ltp"]
                 ce_buy_ltp = df.at[ce_buy, "ce_ltp"]
+
+                if any(x == 0 for x in [pe_sell_ltp, pe_buy_ltp, ce_sell_ltp, ce_buy_ltp]):
+                    raise ValueError("❌ One of the strike LTPs is illiquid (0).")
             except:
-                raise ValueError("❌ One of the required strikes is missing in option chain.")
+                raise ValueError("❌ One of the required strikes is missing or illiquid.")
 
             net_credit = round(pe_sell_ltp + ce_sell_ltp - pe_buy_ltp - ce_buy_ltp, 2)
 
@@ -152,6 +155,9 @@ async def find_adaptive_ic_from_csv(csv_path, locked_mode=False):
                         ce_buy = float(ce_buy_row["ce_ltp"].iloc[0])
                         pe_buy = float(pe_buy_row["pe_ltp"].iloc[0])
                     except:
+                        continue
+
+                    if any(x == 0 for x in [ce_ltp, pe_ltp, ce_buy, pe_buy]):
                         continue
 
                     net_credit = ce_ltp + pe_ltp - ce_buy - pe_buy
