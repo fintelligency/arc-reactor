@@ -62,14 +62,21 @@ async def upload_ic_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await new_file.download_to_drive(file_path)
 
         try:
-            ic_list = await find_adaptive_ic_from_csv(file_path)
-            expiry_guess = datetime.datetime.now().strftime("%d-%b-%Y")
+            # 🔒 Detect locked mode from filename
+            locked_mode = "locked" in doc.file_name.lower()
+
+            # 🧠 Pass locked_mode to IC scanner
+            ic_list = await find_adaptive_ic_from_csv(file_path, locked_mode=locked_mode)
 
             if ic_list:
                 await log_and_alert_ic_candidates(ic_list)
-                await update.message.reply_text("✅ IC candidates scanned and logged.")
+                if locked_mode:
+                    await update.message.reply_text("🔒 Locked IC strategy scanned and logged.")
+                else:
+                    await update.message.reply_text("✅ IC candidates scanned and logged.")
             else:
                 await update.message.reply_text("⚠️ No valid ICs found.")
+
         except Exception as e:
             await update.message.reply_text(f"❌ Failed to scan IC: {e}")
 
