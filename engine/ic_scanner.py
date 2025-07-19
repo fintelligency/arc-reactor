@@ -5,6 +5,11 @@ import re
 from upload.gdrive_sync import append_to_gsheet
 from utils.alerts import send_telegram_alert
 
+WING_WIDTH = 800
+LOCKED_GAP = 1500
+STRIKE_INTERVAL = 100
+MARGIN_REQUIREMENT = 160000
+
 
 def get_banknifty_spot():
     try:
@@ -34,22 +39,20 @@ def extract_expiry_from_filename(filename: str) -> str:
     match = re.search(r'(\d{1,2})-([A-Za-z]{3})-(\d{4})', base)
     if not match:
         return datetime.datetime.now().strftime("%d-%b-%Y")
-    day, mon, year = match.groups()
     try:
-        expiry = datetime.datetime.strptime(f"{day}-{mon}-{year}", "%d-%b-%Y")
+        expiry = datetime.datetime.strptime("-".join(match.groups()), "%d-%b-%Y")
         return expiry.strftime("%d-%b-%Y")
     except:
         return datetime.datetime.now().strftime("%d-%b-%Y")
 
 
-def round_to_nearest(x, base=100):
+def round_to_nearest(x, base=STRIKE_INTERVAL):
     return base * round(x / base)
 
 
 async def find_adaptive_ic_from_csv(csv_path, locked_mode=False):
     try:
         expiry = extract_expiry_from_filename(csv_path)
-
         df_raw = pd.read_csv(csv_path, skiprows=1, thousands=",")
         df_raw.columns = df_raw.columns.str.strip()
 
@@ -86,43 +89,24 @@ async def find_adaptive_ic_from_csv(csv_path, locked_mode=False):
         total_checked = 0
 
         if locked_mode:
-            pe_sell = round_to_nearest(spot - 1500, 500)
+            pe_sell = round_to_nearest(spot - LOCKED_GAP, 500)
             pe_buy = pe_sell - 1000
-            ce_sell = round_to_nearest(spot + 1500, 500)
+            ce_sell = round_to_nearest(spot + LOCKED_GAP, 500)
             ce_buy = ce_sell + 1000
 
-            legs = {
-                "sell_pe": pe_sell,
-                "buy_pe": pe_buy,
-                "sell_ce": ce_sell,
-                "buy_ce": ce_buy,
-            }
+            legs = {"sell_pe": pe_sell, "buy_pe": pe_buy, "sell_ce": ce_sell, "buy_ce": ce_buy}
 
             df.set_index("strike", inplace=True)
-            missing = []
-
             try:
                 pe_sell_ltp = df.at[pe_sell, "pe_ltp"]
-                if pe_sell_ltp == 0 or pd.isna(pe_sell_ltp):
-                    missing.append(f"{pe_sell} PE Sell")
-
                 pe_buy_ltp = df.at[pe_buy, "pe_ltp"]
-                if pe_buy_ltp == 0 or pd.isna(pe_buy_ltp):
-                    missing.append(f"{pe_buy} PE Buy")
-
                 ce_sell_ltp = df.at[ce_sell, "ce_ltp"]
-                if ce_sell_ltp == 0 or pd.isna(ce_sell_ltp):
-                    missing.append(f"{ce_sell} CE Sell")
-
                 ce_buy_ltp = df.at[ce_buy, "ce_ltp"]
-                if ce_buy_ltp == 0 or pd.isna(ce_buy_ltp):
-                    missing.append(f"{ce_buy} CE Buy")
-
             except KeyError as e:
                 raise ValueError(f"❌ Locked IC failed: required strike {e.args[0]} not found in CSV.")
 
-            if missing:
-                raise ValueError(f"❌ Locked IC failed: illiquid/missing strikes: {', '.join(missing)}")
+            if any(pd.isna(x) or x == 0 for x in [pe_sell_ltp, pe_buy_ltp, ce_sell_ltp, ce_buy_ltp]):
+                raise ValueError("❌ Locked IC failed: illiquid/missing strikes")
 
             net_credit = round(pe_sell_ltp + ce_sell_ltp - pe_buy_ltp - ce_buy_ltp, 2)
             ic_list.append({**legs, "net_credit": net_credit, "expiry": expiry})
@@ -136,26 +120,23 @@ async def find_adaptive_ic_from_csv(csv_path, locked_mode=False):
         for i in range(len(df)):
             for j in range(i + 4, len(df)):
                 total_checked += 1
-                ce_sell = float(df.iloc[j]["strike"])
-                pe_sell = float(df.iloc[i]["strike"])
-
+                ce_sell, pe_sell = float(df.iloc[j]["strike"]), float(df.iloc[i]["strike"])
                 if pe_sell > spot or ce_sell < spot:
                     continue
 
-                ce_ltp = df.iloc[j].get("ce_ltp", None)
-                pe_ltp = df.iloc[i].get("pe_ltp", None)
+                ce_ltp = df.iloc[j].get("ce_ltp")
+                pe_ltp = df.iloc[i].get("pe_ltp")
 
-                ce_buy_strike = ce_sell + 800
-                pe_buy_strike = pe_sell - 800
+                ce_buy_strike = ce_sell + WING_WIDTH
+                pe_buy_strike = pe_sell - WING_WIDTH
 
-                ce_buy_row = df[df["strike"] == ce_buy_strike]
-                pe_buy_row = df[df["strike"] == pe_buy_strike]
+                ce_buy = df[df["strike"] == ce_buy_strike]["ce_ltp"].values
+                pe_buy = df[df["strike"] == pe_buy_strike]["pe_ltp"].values
 
-                if ce_buy_row.empty or pe_buy_row.empty:
+                if not ce_buy.size or not pe_buy.size:
                     continue
 
-                ce_buy = ce_buy_row.iloc[0].get("ce_ltp", None)
-                pe_buy = pe_buy_row.iloc[0].get("pe_ltp", None)
+                ce_buy, pe_buy = ce_buy[0], pe_buy[0]
 
                 if any(pd.isna(x) or x == 0 for x in [ce_ltp, pe_ltp, ce_buy, pe_buy]):
                     continue
@@ -166,20 +147,19 @@ async def find_adaptive_ic_from_csv(csv_path, locked_mode=False):
 
                 max_credit_seen = max(max_credit_seen, net_credit)
                 ic_list.append({
-                    "sell_pe": int(pe_sell),
-                    "buy_pe": int(pe_buy_strike),
-                    "sell_ce": int(ce_sell),
-                    "buy_ce": int(ce_buy_strike),
-                    "net_credit": round(net_credit, 2),
-                    "expiry": expiry
+                    "sell_pe": int(pe_sell), "buy_pe": int(pe_buy_strike),
+                    "sell_ce": int(ce_sell), "buy_ce": int(ce_buy_strike),
+                    "net_credit": round(net_credit, 2), "expiry": expiry
                 })
 
-        summary = f"""\n🧪 *IC Scan Summary*\n• Total combos scanned: {total_checked}\n• Max credit observed: ₹{round(max_credit_seen, 2)}\n• Valid ICs found: {len(ic_list)}\n"""
+        summary = f"""
+🧪 *IC Scan Summary*\n• Total combos scanned: {total_checked}\n• Max credit observed: ₹{round(max_credit_seen, 2)}\n• Valid ICs found: {len(ic_list)}\n"""
         await send_telegram_alert(summary)
         return sorted(ic_list, key=lambda x: -x["net_credit"])[:3]
 
     except Exception as e:
         raise ValueError(f"❌ Error parsing CSV: {e}")
+
 
 async def log_and_alert_ic_candidates(ic_list):
     if not ic_list:
@@ -187,7 +167,7 @@ async def log_and_alert_ic_candidates(ic_list):
 
     rows = []
     for ic in ic_list:
-        row = {
+        rows.append({
             "Symbol": "BANKNIFTY",
             "Expiry": ic["expiry"],
             "Sell PE": ic['sell_pe'],
@@ -195,11 +175,10 @@ async def log_and_alert_ic_candidates(ic_list):
             "Sell CE": ic['sell_ce'],
             "Buy CE": ic['buy_ce'],
             "Net Credit": ic['net_credit'],
-            "Margin": 160000,
+            "Margin": MARGIN_REQUIREMENT,
             "Status": "New",
             "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        rows.append(row)
+        })
 
     append_to_gsheet(rows, sheet_name="ic_trades")
 
