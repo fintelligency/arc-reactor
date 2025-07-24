@@ -11,7 +11,6 @@ from upload.gdrive_sync import read_sheet
 import logging
 import os
 import tempfile
-import datetime
 
 # === Custom CSV File Filter ===
 class CSVFileFilter(MessageFilter):
@@ -66,7 +65,7 @@ async def upload_ic_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
             locked_mode = "locked" in doc.file_name.lower()
 
             # 🧠 Pass locked_mode to IC scanner
-            ic_list = await find_adaptive_ic_from_csv(file_path, locked_mode=locked_mode)
+            ic_list = await find_adaptive_ic_from_csv(file_path)
 
             if ic_list:
                 await log_and_alert_ic_candidates(ic_list)
