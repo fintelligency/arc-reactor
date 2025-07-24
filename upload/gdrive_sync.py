@@ -75,3 +75,17 @@ def append_to_gsheet(rows, sheet_name="ic_trades"):
     worksheet.clear()
     worksheet.update([df_combined.columns.values.tolist()] + df_combined.values.tolist())
     print(f"[GSheet] ✅ Appended {len(rows)} row(s) to {sheet_name}")
+
+def get_config_dict(sheet_name="IC_Config", spreadsheet_name="ArcReactorMaster"):
+    """
+    Reads config as key-value from sheet and returns as dictionary
+    """
+    try:
+        sheet = CLIENT.open(spreadsheet_name).worksheet(sheet_name)
+        rows = sheet.get_all_records()
+        config = {row["Key"]: str(row["Value"]).strip() for row in rows if row.get("Key")}
+        print(f"[GSheet] ✅ Loaded config from {sheet_name}: {config}")
+        return config
+    except Exception as e:
+        print(f"[GSheet] ❌ Config read failed: {e}")
+        return {}
