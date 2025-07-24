@@ -1,5 +1,6 @@
 import requests
 import logging
+import time
 from typing import List, Dict
 
 HEADERS = {
@@ -11,54 +12,50 @@ HEADERS = {
     "Accept": "*/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Referer": "https://www.nseindia.com",
+    "Connection": "keep-alive",
 }
 
 BASE_URL = "https://www.nseindia.com/api/option-chain-indices"
 
+
 def fetch_nse_option_chain(symbol: str) -> List[Dict]:
     """
-    Fetch the option chain for NIFTY or BANKNIFTY from NSE website.
+    Fetches the option chain data from NSE for NIFTY or BANKNIFTY.
 
     Args:
-        symbol (str): 'NIFTY' or 'BANKNIFTY'
+        symbol (str): Index symbol like 'NIFTY' or 'BANKNIFTY'
 
     Returns:
-        List[Dict]: List of option chain data rows
+        List[Dict]: List of option data with CE/PE flattened
     """
+    from requests.exceptions import RequestException, Timeout, HTTPError, ConnectionError
+
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    from requests.exceptions import RequestException, Timeout, HTTPError, ConnectionError
-
     try:
-        # Warm-up request to get cookies
-        _ = session.get("https://www.nseindia.com", timeout=5)
+        # Warm up the session to obtain cookies
+        session.get("https://www.nseindia.com", timeout=5)
+        time.sleep(1)  # Delay to avoid getting blocked
 
-        # Actual request
-        url = f"{BASE_URL}?symbol={symbol.upper()}"
-        response = session.get(url, timeout=10)
+        response = session.get(f"{BASE_URL}?symbol={symbol.upper()}", timeout=10)
         response.raise_for_status()
 
         data = response.json()
         records = data.get("records", {})
         oc_data = records.get("data", [])
 
-        # Flatten CE + PE per strike
-        option_chain = []
+        option_chain: List[Dict] = []
+
         for row in oc_data:
             strike_price = row.get("strikePrice")
 
-            if "CE" in row:
-                ce = row["CE"]
-                ce["optionType"] = "CE"
-                ce["strikePrice"] = strike_price
-                option_chain.append(ce)
-
-            if "PE" in row:
-                pe = row["PE"]
-                pe["optionType"] = "PE"
-                pe["strikePrice"] = strike_price
-                option_chain.append(pe)
+            for opt_type in ["CE", "PE"]:
+                if opt_type in row:
+                    entry = row[opt_type]
+                    entry["optionType"] = opt_type
+                    entry["strikePrice"] = strike_price
+                    option_chain.append(entry)
 
         return option_chain
 
@@ -71,7 +68,8 @@ def fetch_nse_option_chain(symbol: str) -> List[Dict]:
     except KeyError as key_err:
         logging.error(f"🔍 Missing expected key in NSE response: {key_err}")
     except RequestException as req_err:
-        logging.error(f"⚠️ General request exception: {req_err}")
+        logging.error(f"⚠️ Request exception occurred: {req_err}")
+    except Exception as e:
+        logging.exception("❌ Unexpected error while fetching NSE Option Chain")
 
-    # ✅ Ensure a fallback return to satisfy type checker
-    return []
+    return []  # Ensure function always returns list for safe downstream processing
