@@ -20,7 +20,7 @@ class CSVFileFilter(MessageFilter):
 csv_filter = CSVFileFilter()
 
 # === Telegram Command: Start ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, _: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Arc Commander Activated.\nUse /refresh_zone, /signal SYMBOL, or upload IC CSV using /ic_entry.")
 
 # === Telegram Command: Signal ===
@@ -79,10 +79,29 @@ async def upload_ic_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"❌ Failed to scan IC: {e}")
 
+# === Telegram Command: Fetch NSE Data ===
+async def fetch_nse(update: Update, _: ContextTypes.DEFAULT_TYPE):
+    try:
+        from utils.nse_oc_fetcher import fetch_nse_option_chain
+
+        symbol = "BANKNIFTY"
+        option_chain = fetch_nse_option_chain(symbol)
+
+        if isinstance(option_chain, list) and len(option_chain) > 0:
+            await update.message.reply_text(f"✅ Fetched {len(option_chain)} rows for {symbol}")
+        else:
+            await update.message.reply_text("⚠️ Empty option chain or invalid response")
+
+    except Exception as e:
+        logging.exception(e)
+        await update.message.reply_text(f"❌ Failed to fetch NSE data: {e}")
+
+
 # === Start Bot ===
 def start_bot(config):
     app = ApplicationBuilder().token(config["TELEGRAM_TOKEN"]).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("signal", signal))
     app.add_handler(MessageHandler(csv_filter, upload_ic_csv))
+    app.add_handler(CommandHandler("fetch_nse", fetch_nse))
     app.run_polling()
