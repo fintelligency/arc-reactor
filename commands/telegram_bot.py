@@ -5,7 +5,6 @@ from telegram.ext import (
 )
 from telegram.ext.filters import MessageFilter
 from config.config_loader import CONFIG
-from engine.entry_signals import check_signal_for_stock
 from engine.ic_scanner import find_adaptive_ic_from_csv, log_and_alert_ic_candidates
 from upload.gdrive_sync import read_sheet
 import logging
