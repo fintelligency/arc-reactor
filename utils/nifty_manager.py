@@ -1,84 +1,56 @@
-# arc_reactor/utils/nifty_manager.py
-
 """
 Utility class to manage Nifty50 membership based on a CSV file.
-CSV MUST have columns: Symbol, from_date, to_date
-Dates should be in DD-MMM-YY or YYYY-MM-DD.
+CSV MUST have columns: symbol, from_date, to_date
 """
 
 import pandas as pd
 
 class NiftyManager:
-    def __init__(self, csv_path="arc_reactor/data/nifty50_membership.csv"):
-        # Load CSV
-        self.df = pd.read_csv(csv_path)
-        # Normalize column names to lowercase
-        self.df.columns = [c.strip().lower() for c in self.df.columns]
-
-        # Ensure correct column names
-        required_cols = {"symbol", "from_date", "to_date"}
-        if not required_cols.issubset(set(self.df.columns)):
-            raise ValueError(f"File {csv_path} must contain columns: {required_cols}")
-
-        # Parse dates
-        self.df['from_date'] = pd.to_datetime(self.df['from_date'], errors='coerce')
-        self.df['to_date']   = pd.to_datetime(self.df['to_date'],   errors='coerce')
-
-    def get_active_symbols(self, on_date):
+    def __init__(self, csv_path):
         """
-        Return a list of symbols that were part of Nifty50 on on_date.
-        on_date: string or datetime
+        csv_path: path to CSV with columns:
+            symbol, from_date, to_date
+        where to_date can be blank for currently active.
         """
-        if isinstance(on_date, str):
-            dt = pd.to_datetime(on_date)
-        else:
-            dt = pd.to_datetime(on_date)
+        df = pd.read_csv(csv_path)
+        df.columns = [c.strip().lower() for c in df.columns]
 
-        mask = (
-                (self.df['from_date'] <= dt) &
-                (self.df['to_date'].isna() | (self.df['to_date'] >= dt))
-        )
-        return self.df.loc[mask,'symbol'].unique().tolist()
+        required = {"symbol","from_date","to_date"}
+        if not required.issubset(set(df.columns)):
+            raise ValueError(f"CSV must contain {required}")
 
-    def get_symbols_on_date(self, dt):
-        """
-        Returns the list of Nifty50 symbols active on the given date.
-        dt: datetime.date or datetime-like
-        """
-        mask = (
-                (self.df['from_date'] <= dt) &
-                ((self.df['to_date'].isna()) | (self.df['to_date'] >= dt))
-        )
-        return self.df.loc[mask, 'symbol'].unique().tolist()
+        # parse dates
+        df['from_date'] = pd.to_datetime(df['from_date'], errors='coerce')
+        df['to_date']   = pd.to_datetime(df['to_date'],   errors='coerce')
 
-    def is_active(self, symbol, on_date):
-        """
-        Returns True if the given symbol was part of the Nifty50 on that date.
-        """
-        if isinstance(on_date, str):
-            dt = pd.to_datetime(on_date)
-        else:
-            dt = pd.to_datetime(on_date)
+        # fill missing to_date with far future so comparisons are easy
+        df['to_date'] = df['to_date'].fillna(pd.Timestamp("2100-01-01"))
 
-        symbol = symbol.strip().upper()
+        self.df = df
+
+    def is_active(self, symbol, date):
+        """
+        True if symbol was part of Nifty50 on that date.
+        """
+        symbol = symbol.upper().strip()
+        dt = pd.to_datetime(date)
         rows = self.df[self.df['symbol'].str.upper() == symbol]
-
-        if rows.empty:
-            return False
 
         for _, row in rows.iterrows():
             frm = row['from_date']
             to  = row['to_date']
-            # if from_date is NaT, assume always active until to_date
-            if pd.isna(frm) or frm <= dt:
-                if pd.isna(to) or dt <= to:
-                    return True
-
+            if frm <= dt <= to:
+                return True
         return False
 
+    # alias for backward compatibility
+    def is_member(self, symbol, date):
+        return self.is_active(symbol, date)
 
-# Example usage:
-# if __name__ == "__main__":
-#     nm = NiftyManager("arc_reactor/data/nifty50_membership.csv")
-#     print(nm.get_active_symbols("2018-04-01"))
-#     print(nm.is_active("RELIANCE", "2015-01-01"))
+    def get_active_symbols(self, on_date):
+        """
+        Returns list of all Nifty50 constituents on a given date.
+        """
+        dt = pd.to_datetime(on_date)
+        mask = (self.df['from_date'] <= dt) & (self.df['to_date'] >= dt)
+        return self.df.loc[mask,'symbol'].str.upper().unique().tolist()

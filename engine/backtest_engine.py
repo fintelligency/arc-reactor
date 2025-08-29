@@ -1,90 +1,34 @@
-# backtest_engine.py
 import pandas as pd
-from datetime import datetime, timedelta
+import numpy as np
 from utils.nifty_manager import NiftyManager
-from entry_signals import scan_multiple, check_single_zone, EntryResult
-from exit_signals import ExitSignals
+from entry_signals import scan_multiple
 
-class MockGDriveSync:
-    def __init__(self, positions_df=None):
-        self.positions_df = positions_df
 
-    def get_open_positions(self, symbol):
-        if self.positions_df is None:
-            return []
-        return self.positions_df[
-            (self.positions_df['symbol'] == symbol) &
-            (self.positions_df.get('status', 'open') == 'open')
-        ].to_dict('records')
+def load_pp_levels(pp_csv):
+    df = pd.read_csv(pp_csv)
+    pp_map = {}
+    for _, row in df.iterrows():
+        yr = int(row['Year'])
+        sym = row['symbol']
+        levels = {
+            "PP": row['pp'],
+            "S1": row['s1'],
+            "S2": row['s2'],
+            "S3": row['s3'],
+            "R1": row['r1'],
+            "R2": row['r2'],
+            "R3": row['r3']
+        }
+        pp_map.setdefault(yr, {})[sym] = levels
+    return pp_map
 
-    def log_entry(self, symbol, zone, qty, price, date, capital):
-        if self.positions_df is not None:
-            new_row = {
-                'symbol': symbol,
-                'entry_zone': zone,
-                'entry_price': price,
-                'quantity': qty,
-                'removed_on': None,
-                'protocol_r_active': False,
-                'status': 'open'
-            }
-            self.positions_df = pd.concat([self.positions_df, pd.DataFrame([new_row])], ignore_index=True)
 
-class BacktestEngine:
-    def __init__(self, price_df, r_levels_df, nifty_csv, config):
-        self.price_df = price_df
-        self.r_levels = r_levels_df
-        self.nifty_mgr = NiftyManager(nifty_csv)
-        self.positions = pd.DataFrame(columns=['symbol','entry_zone','entry_price','quantity','removed_on','protocol_r_active','status'])
-        self.exits_log = []
-        self.config = config
-        self.gdrive_sync = MockGDriveSync(self.positions)
-
-    def run_backtest(self):
-        all_dates = sorted(self.price_df['date'].unique())
-        for dt in all_dates:
-            today_prices = self.price_df[self.price_df['date'] == dt]
-            price_lookup = dict(zip(today_prices['symbol'], today_prices['close']))
-
-            # --- ENTRY SIGNALS ---
-            symbols_today = today_prices['symbol'].tolist()
-            new_entries: list[EntryResult] = scan_multiple(
-                symbols=symbols_today,
-                pivots_map=self.config['PIVOTS_MAP'],
-                price_feed=MockPriceFeed(today_prices),
-                gdrive_sync=self.gdrive_sync,
-                dhan_orders=MockDhanOrders(),
-                config=self.config,
-                alerts=None,
-                date=dt
-            )
-
-            for entry in new_entries:
-                self.positions = pd.concat([self.positions, pd.DataFrame([{
-                    'symbol': entry.symbol,
-                    'entry_zone': entry.zone,
-                    'entry_price': entry.price,
-                    'quantity': entry.qty,
-                    'removed_on': None,
-                    'protocol_r_active': False,
-                    'status': 'open'
-                }])], ignore_index=True)
-
-            # --- EXIT SIGNALS ---
-            exit_engine = ExitSignals(self.positions, self.nifty_mgr, self.r_levels)
-            exit_engine.check_protocol_r(dt, price_lookup)  # Protocol R marking
-            exits = exit_engine.execute_exits(dt, price_lookup)
-            self.exits_log.extend(exits)
-
-        return pd.DataFrame(self.exits_log)
-
-# --- MOCK ADAPTERS ---
 class MockPriceFeed:
-    def __init__(self, today_prices_df):
-        self.today_prices_df = today_prices_df
+    def __init__(self, df):
+        self.df = df
 
     def get_price_row(self, symbol, date=None):
-        row = self.today_prices_df[self.today_prices_df['symbol'] == symbol]
+        row = self.df[self.df['symbol'] == symbol]
         if row.empty:
             return None
         r = row.iloc[0]
@@ -93,25 +37,158 @@ class MockPriceFeed:
             'high': r['high'],
             'low': r['low'],
             'close': r['close'],
-            'volume': r['volume'],
-            'rsi': 40,       # placeholder
-            'vol_avg': r['volume'] * 0.8
+            'volume': r.get('volume', 0)
         }
 
-class MockDhanOrders:
-    def place_market_buy(self, symbol, qty):
-        return {'filled_price': 100}  # mock price
 
-# -----------------------------
-# Example usage:
-# price_df = pd.read_csv("daily_prices.csv", parse_dates=['date'])
-# r_levels_df = pd.read_csv("r_levels.csv")
-# config = {
-#     "ALLOCATION_PER_ZONE": 25000,
-#     "S2_RSI_MAX": 40,
-#     "S3_RSI_MAX": 35,
-#     "PIVOTS_MAP": {}  # symbol -> {"P":.., "S1":.., "S2":.., "S3":..}
-# }
-# backtester = BacktestEngine(price_df, r_levels_df, "data/nifty50_membership.csv", config)
-# exits_log_df = backtester.run_backtest()
-# exits_log_df.to_csv("backtest_exits.csv", index=False)
+class BacktestEngine:
+    def __init__(self, price_df, pp_csv, nifty_csv, config):
+        self.price_df = price_df.copy()
+        self.config = config
+        self.nifty_mgr = NiftyManager(nifty_csv)
+        self.pp_map = load_pp_levels(pp_csv)
+
+        self.positions = pd.DataFrame(columns=[
+            'symbol', 'entry_zone', 'entry_price', 'quantity', 'entry_date'
+        ])
+        self.active_positions = {}
+        self.entry_log = []
+        self.exit_log = []
+
+        # Protocol-R tracking
+        self.removal_dates = {}              # sym -> date of member→non-member flip
+        self.protocol_r_exited_syms = set()  # syms already fully exited by Protocol-R
+        self._was_member = {}                # sym -> last seen membership (bool)
+
+    def run_backtest(self):
+        all_dates = sorted(self.price_df['date'].unique())
+        prot_r = self.config.get("PROTOCOL_R", "N")  # "Y" or "N"
+
+        for dt in all_dates:
+            dt_ts = pd.to_datetime(dt)
+            year_key = int(dt_ts.year)
+
+            day_df = self.price_df[self.price_df['date'] == dt]
+            symbols_today = day_df['symbol'].unique().tolist()
+            pivots_today = self.pp_map.get(year_key, {})
+
+            # Quick lookups
+            day_highs = dict(zip(day_df['symbol'], day_df['high']))
+            day_closes = dict(zip(day_df['symbol'], day_df['close']))
+
+            # --- Membership flip detection (member -> non-member) ---
+            for sym in symbols_today:
+                is_mem = self.nifty_mgr.is_member(sym, dt)
+                was_mem = self._was_member.get(sym)
+                if was_mem is None:
+                    # first time we see the symbol; remember state
+                    self._was_member[sym] = is_mem
+                else:
+                    if was_mem and not is_mem and sym not in self.removal_dates:
+                        self.removal_dates[sym] = dt_ts
+                        print(f"[Protocol-R Activated] {sym} removed on {dt_ts.date()}")
+                    self._was_member[sym] = is_mem
+
+            # --- ENTRY: only while member ---
+            for sym in symbols_today:
+                if not self.nifty_mgr.is_member(sym, dt):
+                    continue
+
+                entries = scan_multiple(
+                    symbols=[sym],
+                    pivots_map={sym: pivots_today.get(sym, {})},
+                    price_feed=MockPriceFeed(day_df),
+                    config=self.config,
+                    date=dt,
+                    current_year=year_key,
+                    active_positions=self.active_positions
+                )
+
+                for e in entries:
+                    if e and e.action == "BUY":
+                        self.positions = pd.concat([self.positions, pd.DataFrame([{
+                            'symbol': e.symbol,
+                            'entry_zone': e.zone,
+                            'entry_price': e.price,
+                            'quantity': e.qty,
+                            'entry_date': dt_ts
+                        }])], ignore_index=True)
+
+                        self.entry_log.append({
+                            'symbol': e.symbol,
+                            'zone': e.zone,
+                            'price': e.price,
+                            'date': dt_ts
+                        })
+
+            # --- EXIT processing ---
+            exit_rows = []
+
+            # --- Normal exits for still-members ---
+            for idx, pos in self.positions.iterrows():
+                sym = pos['symbol']
+                zone = pos['entry_zone']
+                pivot = pivots_today.get(sym)
+                if pivot is None or sym not in day_highs:
+                    continue
+
+                high_px = day_highs[sym]
+                reason = None
+                exit_px = None
+
+                if zone == "S1" and high_px >= pivot["R1"]:
+                    reason, exit_px = "R1", pivot["R1"]
+                elif zone == "S2" and high_px >= pivot["R2"]:
+                    reason, exit_px = "R2", pivot["R2"]
+                elif zone == "S3" and high_px >= pivot["R3"]:
+                    reason, exit_px = "R3", pivot["R3"]
+
+                if reason:
+                    pnl = (exit_px - pos['entry_price']) * pos['quantity']
+                    exit_rows.append({
+                        'symbol': sym,
+                        'entry_price': pos['entry_price'],
+                        'exit_price': exit_px,
+                        'entry_zone': pos['entry_zone'],
+                        'entry_date': pos['entry_date'],
+                        'exit_date': dt_ts,
+                        'quantity': pos['quantity'],
+                        'pnl': pnl,
+                        'reason': reason
+                    })
+                    self.positions.at[idx, 'to_remove'] = True
+
+            # Drop closed positions
+            if not self.positions.empty and 'to_remove' in self.positions.columns:
+                self.positions = self.positions[self.positions['to_remove'] != True]
+                self.positions.drop(columns=['to_remove'], inplace=True)
+
+            if exit_rows:
+                self.exit_log.extend(exit_rows)
+
+        # === Unrealized P&L for still-open positions ===
+        last_date = pd.to_datetime(self.price_df['date'].max())
+        last_df = self.price_df[self.price_df['date'] == last_date]
+        last_closes = dict(zip(last_df['symbol'], last_df['close']))
+
+        for _, pos in self.positions.iterrows():
+            sym = pos['symbol']
+            if sym in last_closes:
+                last_close = last_closes[sym]
+                unrealized_pnl = (last_close - pos['entry_price']) * pos['quantity']
+                self.exit_log.append({
+                    'symbol': sym,
+                    'entry_price': pos['entry_price'],
+                    'exit_price': last_close,
+                    'entry_zone': pos['entry_zone'],
+                    'entry_date': pos['entry_date'],
+                    'exit_date': "OPEN",
+                    'quantity': pos['quantity'],
+                    'pnl': unrealized_pnl,
+                    'reason': "OPEN"
+                })
+        print(self.exit_log)
+        return pd.DataFrame(self.exit_log, columns=[
+            'symbol', 'entry_price', 'exit_price', 'entry_zone',
+            'entry_date', 'exit_date', 'quantity', 'pnl', 'reason'
+        ])
