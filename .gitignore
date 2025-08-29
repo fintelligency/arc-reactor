@@ -22,3 +22,8 @@ zones/*.xlsx
 # OS/System
 .DS_Store
 Thumbs.db
+
+# Ignore data files
+*.csv
+data/
+ohlc_data/
