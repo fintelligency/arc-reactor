@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from utils.nifty_manager import NiftyManager
-from entry_signals import scan_multiple
+from engine.entry_signals import scan_multiple
 
 
 def load_pp_levels(pp_csv):

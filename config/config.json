@@ -1,7 +1,7 @@
 {
-  "TELEGRAM_TOKEN": "7410776687:AAGFSCD_bbPIMAVhOTcbAHgwowmr4hSpc3s",
-  "TELEGRAM_CHAT_ID": "6518073051",
-  "DHAN_CLIENT_ID": "your_dhan_client_id",
-  "DHAN_ACCESS_TOKEN": "your_dhan_access_token",
-  "GSHEET_ID": "10U_HLgmXmmu5NgRf8w3dQM6M-xDdetVOLKj_qeS4kLY"
+  "TELEGRAM_TOKEN": "",
+  "TELEGRAM_CHAT_ID": "",
+  "DHAN_CLIENT_ID": "",
+  "DHAN_ACCESS_TOKEN": "",
+  "GSHEET_ID": ""
 }

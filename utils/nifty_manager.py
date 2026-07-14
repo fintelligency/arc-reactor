@@ -54,3 +54,7 @@ class NiftyManager:
         dt = pd.to_datetime(on_date)
         mask = (self.df['from_date'] <= dt) & (self.df['to_date'] >= dt)
         return self.df.loc[mask,'symbol'].str.upper().unique().tolist()
+
+    # alias for backward compatibility with exit_signals.py
+    def get_symbols_on_date(self, on_date):
+        return self.get_active_symbols(on_date)

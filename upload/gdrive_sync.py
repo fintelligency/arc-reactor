@@ -9,9 +9,21 @@ SCOPE = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
 ]
-CREDS_DICT = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
-CREDS = ServiceAccountCredentials.from_json_keyfile_dict(CREDS_DICT, SCOPE)
-CLIENT = gspread.authorize(CREDS)
+
+# Lazy client — credentials are only loaded on first actual call, not at import time
+_CLIENT = None
+
+def _get_client():
+    global _CLIENT
+    if _CLIENT is None:
+        creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+        if not creds_json:
+            raise RuntimeError("[GSheet] ❌ GOOGLE_CREDENTIALS_JSON env var not set")
+        creds_dict = json.loads(creds_json)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+        _CLIENT = gspread.authorize(creds)
+    return _CLIENT
+
 
 def upload_to_gsheet(df_new, sheet_name="trading_zones"):
     if not isinstance(df_new, pd.DataFrame):
@@ -21,7 +33,7 @@ def upload_to_gsheet(df_new, sheet_name="trading_zones"):
     if "Symbol" not in df_new.columns:
         raise ValueError(f"[GSheet] ❌ 'Symbol' column missing. Found: {df_new.columns.tolist()}")
 
-    sheet = CLIENT.open("ArcReactorMaster")
+    sheet = _get_client().open("ArcReactorMaster")
     worksheet = sheet.worksheet(sheet_name)
 
     try:
@@ -43,7 +55,7 @@ def upload_to_gsheet(df_new, sheet_name="trading_zones"):
 
 def read_sheet(sheet_id, sheet_name):
     try:
-        sheet = CLIENT.open_by_key(sheet_id).worksheet(sheet_name)
+        sheet = _get_client().open_by_key(sheet_id).worksheet(sheet_name)
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         return df
@@ -53,14 +65,14 @@ def read_sheet(sheet_id, sheet_name):
 
 def append_row(sheet_id, sheet_name, row_data):
     try:
-        sheet = CLIENT.open_by_key(sheet_id).worksheet(sheet_name)
+        sheet = _get_client().open_by_key(sheet_id).worksheet(sheet_name)
         sheet.append_row(row_data, value_input_option=ValueInputOption.user_entered)
         print(f"[GSheet] ✅ Appended to {sheet_name}: {row_data}")
     except Exception as e:
         print(f"[GSheet] ❌ Append failed: {e}")
 
 def append_to_gsheet(rows, sheet_name="ic_trades"):
-    sheet = CLIENT.open("ArcReactorMaster")
+    sheet = _get_client().open("ArcReactorMaster")
     worksheet = sheet.worksheet(sheet_name)
 
     try:
@@ -81,11 +93,11 @@ def get_config_dict(sheet_name="IC_Config", spreadsheet_name="ArcReactorMaster")
     Reads config as key-value from sheet and returns as dictionary
     """
     try:
-        sheet = CLIENT.open(spreadsheet_name).worksheet(sheet_name)
+        sheet = _get_client().open(spreadsheet_name).worksheet(sheet_name)
         rows = sheet.get_all_records()
         config = {row["Key"]: str(row["Value"]).strip() for row in rows if row.get("Key")}
         print(f"[GSheet] ✅ Loaded config from {sheet_name}: {config}")
         return config
     except Exception as e:
         print(f"[GSheet] ❌ Config read failed: {e}")
-        return {}
+        return {}
